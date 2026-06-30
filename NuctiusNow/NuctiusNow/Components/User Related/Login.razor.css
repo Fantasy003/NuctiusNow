@@ -1,0 +1,159 @@
+﻿/* Contenedor principal con fondo abstracto simulado */
+.login-page-container {
+    min-height: 100vh;
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-family: 'Georgia', 'Times New Roman', serif; /* Tipografía sutilmente clásica como la imagen */
+    margin: 0;
+    padding: 1rem;
+    box-sizing: border-box;
+    /* Simulación del fondo con ondas de la imagen usando gradientes múltiples */
+    background: radial-gradient(ellipse at top, #364968 15%, transparent 60%), radial-gradient(ellipse at bottom, #364968 15%, transparent 60%), #d1cfca;
+    background-size: cover;
+}
+
+/* Tarjeta Gris Central */
+.login-card {
+    background-color: #9da1a6; /* Gris medio de la imagen */
+    width: 100%;
+    max-width: 480px;
+    border-radius: 24px; /* Esquinas bien suavizadas */
+    overflow: hidden;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+}
+
+/* Cabecera Azul/Grisácea */
+.login-header {
+    background-color: #5c667a; /* Color exacto de la barra superior */
+    padding: 1.2rem;
+    text-align: center;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+    .login-header h1 {
+        color: #ffffff;
+        margin: 0;
+        font-size: 2.2rem;
+        font-weight: bold;
+        letter-spacing: 2px;
+    }
+
+/* Contenido del Formulario */
+.login-body {
+    padding: 2.5rem 3rem;
+}
+
+/* Grupos de Inputs */
+.form-group {
+    margin-bottom: 1.8rem;
+    display: flex;
+    flex-direction: column;
+}
+
+    .form-group label {
+        color: #1a1a1a;
+        font-size: 0.95rem;
+        margin-bottom: 0.4rem;
+        font-weight: 500;
+        padding-left: 0.5rem;
+    }
+
+    .form-group input {
+        background-color: #ffffff;
+        border: none;
+        outline: none;
+        padding: 0.75rem 1.2rem;
+        font-size: 1.1rem;
+        border-radius: 50px; /* Inputs con forma de cápsula idénticos a la foto */
+        color: #333333;
+        box-shadow: inset 0 2px 4px rgba(0,0,0,0.05);
+        width: 100%;
+        box-sizing: border-box;
+    }
+
+/* Checkbox Personalizado (Círculo Blanco) */
+.form-checkbox {
+    margin-bottom: 2rem;
+    padding-left: 0.2rem;
+}
+
+.checkbox-container {
+    display: flex;
+    align-items: center;
+    position: relative;
+    cursor: pointer;
+    font-size: 0.88rem;
+    color: #1a1a1a;
+    user-select: none;
+    gap: 0.6rem;
+}
+
+    /* Escondemos el checkbox nativo cuadrado */
+    .checkbox-container input {
+        position: absolute;
+        opacity: 0;
+        cursor: pointer;
+        height: 0;
+        width: 0;
+    }
+
+/* Creamos el círculo blanco de la imagen */
+.custom-checkmark {
+    height: 18px;
+    width: 18px;
+    background-color: #ffffff;
+    border-radius: 50%; /* Redondo */
+    display: inline-block;
+    transition: background-color 0.2s;
+}
+
+/* Comportamiento visual al seleccionarlo (opcional, le da feedback al usuario) */
+.checkbox-container input:checked ~ .custom-checkmark {
+    background-color: #ffd466; /* Se pinta del color del botón al activarse */
+    box-shadow: inset 0 0 0 4px #ffffff;
+}
+
+/* Botón Amarillo GO */
+.btn-go {
+    background-color: #ffd466; /* Amarillo característico */
+    color: #000000;
+    border: none;
+    outline: none;
+    width: 100%;
+    padding: 0.8rem;
+    font-size: 1.5rem;
+    font-weight: bold;
+    border-radius: 50px; /* Botón cápsula */
+    cursor: pointer;
+    letter-spacing: 1px;
+    transition: background-color 0.2s, transform 0.1s;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+    .btn-go:hover {
+        background-color: #fcc344;
+    }
+
+    .btn-go:active {
+        transform: scale(0.99);
+    }
+
+.register-redirect {
+    text-align: center;
+    margin-top: 1.5rem; /* Le da aire respecto al botón GO */
+    font-size: 0.9rem;
+    color: #1a1a1a; /* Mismo tono oscuro de los labels */
+}
+
+    .register-redirect a {
+        color: #1d4ed8; /* Un azul sutil para el hipervínculo */
+        text-decoration: underline;
+        font-weight: 600;
+        transition: color 0.2s ease;
+    }
+
+        .register-redirect a:hover {
+            color: #ffcc00; /* Cambia a un tono amarillo/dorado al pasar el mouse */
+        }

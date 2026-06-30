@@ -1,0 +1,136 @@
+﻿@page "/user-settings"
+@rendermode InteractiveServer
+
+<PageTitle>User Settings - NuctiusNow</PageTitle>
+
+<div class="settings-page-container">
+
+    <div class="settings-card">
+
+        <div class="avatar-container">
+            <div class="avatar-circle">
+                <svg viewBox="0 0 24 24" class="avatar-icon">
+                    <path d="M12,12A5,5 0 1,1 17,7A5,5 0 0,1 12,12M12,14c4.42,0 8,1.79 8,4v2H4v-2c0-2.21 3.58-4 8-4Z" />
+                </svg>
+            </div>
+        </div>
+
+        <h1 class="main-title">User Settings</h1>
+
+        <div class="settings-grid">
+
+            <div class="profile-column">
+
+                <div class="form-group">
+                    <label>Email</label>
+                    <div class="input-wrapper">
+                        <input type="email" @bind="userModel.Email" />
+                        <span class="icon-edit">✏️</span>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Username</label>
+                    <div class="input-wrapper">
+                        <input type="text" @bind="userModel.Username" />
+                        <span class="icon-edit">✏️</span>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Password</label>
+                    <div class="input-wrapper">
+                        <input type="password" @bind="userModel.Password" />
+                        <span class="icon-edit">✏️</span>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Birthday</label>
+                    <div class="input-wrapper">
+                        <input type="text" @bind="userModel.Birthday" placeholder="DD/MM/YYYY" />
+                        <span class="icon-calendar">📅</span>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Language</label>
+                    <div class="select-wrapper">
+                        <select @bind="userModel.Language">
+                            <option value="English">English</option>
+                            <option value="Spanish">Spanish</option>
+                        </select>
+                        <span class="select-arrow">▼</span>
+                    </div>
+                </div>
+
+            </div>
+
+            <div class="preferences-column">
+                <div class="preferences-box">
+
+                    <div class="preferences-header">
+                        <h2>Preferences</h2>
+                        <button class="btn-add" @onclick="AgregarPreferencia">＋</button>
+                    </div>
+
+                    <div class="preferences-list">
+                        @foreach (var pref in userModel.Preferences)
+                        {
+                            <div class="preference-item">
+                                <span>@pref</span>
+                                <button class="btn-remove" @onclick="() => EliminarPreferencia(pref)">✕</button>
+                            </div>
+                        }
+                    </div>
+
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+</div>
+
+@code {
+    private SettingsFields userModel = new();
+
+    protected override void OnInitialized()
+    {
+        // Datos iniciales idénticos a tu captura
+        userModel.Email = "emailexample@example.com.ar";
+        userModel.Username = "UsernameExample";
+        userModel.Password = "********************";
+        userModel.Birthday = "19/03/2026";
+        userModel.Language = "English";
+
+        userModel.Preferences = new List<string> {
+            "Technology",
+            "Weather",
+            "Sports",
+            "Aeronautics",
+            "Prehistoric"
+        };
+    }
+
+    private void AgregarPreferencia()
+    {
+        // Lógica de simulación para agregar una nueva tag
+        userModel.Preferences.Add("New Interest");
+    }
+
+    private void EliminarPreferencia(string target)
+    {
+        userModel.Preferences.Remove(target);
+    }
+
+    public class SettingsFields
+    {
+        public string Email { get; set; } = "";
+        public string Username { get; set; } = "";
+        public string Password { get; set; } = "";
+        public string Birthday { get; set; } = "";
+        public string Language { get; set; } = "";
+        public List<string> Preferences { get; set; } = new();
+    }
+}

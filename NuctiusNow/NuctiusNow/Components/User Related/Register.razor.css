@@ -1,0 +1,190 @@
+﻿/* Contenedor principal con fondo degradado suave (Cian a Azul) */
+.register-page-container {
+    min-height: 100vh;
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-family: 'Georgia', 'Times New Roman', serif; /* Manteniendo la tipografía de la app */
+    margin: 0;
+    padding: 2rem 1rem;
+    box-sizing: border-box;
+    background: linear-gradient(135deg, #4ed3e6 0%, #0353b3 100%);
+}
+
+/* Tarjeta Gris Central */
+.register-card {
+    background-color: #9da1a6; /* Gris idéntico a tu diseño */
+    width: 100%;
+    max-width: 460px;
+    border-radius: 24px;
+    overflow: hidden;
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.25);
+}
+
+/* Cabecera de Registro con Letras Blancas */
+.register-header {
+    padding: 1.5rem 1rem 0.5rem 1rem;
+    text-align: center;
+}
+
+    .register-header h1 {
+        color: #ffffff;
+        margin: 0;
+        font-size: 2.4rem;
+        font-weight: bold;
+        letter-spacing: 2px;
+        text-shadow: 1px 1px 2px rgba(0,0,0,0.1);
+    }
+
+/* Contenido del Formulario */
+.register-body {
+    padding: 2rem 2.5rem;
+}
+
+/* Grupos de Inputs */
+.form-group {
+    margin-bottom: 1.4rem;
+    display: flex;
+    flex-direction: column;
+}
+
+    .form-group label {
+        color: #1a1a1a;
+        font-size: 0.95rem;
+        margin-bottom: 0.3rem;
+        font-weight: 500;
+        padding-left: 0.5rem;
+    }
+
+    .form-group input {
+        background-color: #ffffff;
+        border: none;
+        outline: none;
+        padding: 0.75rem 1.2rem;
+        font-size: 1.05rem;
+        border-radius: 50px; /* Estilo Cápsula */
+        color: #333333;
+        width: 100%;
+        box-sizing: border-box;
+    }
+
+/* =======================================================
+   BLOQUE CAPTCHA (Caja Oscura + Checkbox Blanco Redondeado)
+   ======================================================= */
+.captcha-box {
+    background-color: #4a4d52; /* Color gris oscuro del contenedor */
+    border-radius: 16px;
+    padding: 1rem 1.5rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin: 1.8rem 0;
+    box-shadow: inset 0 2px 4px rgba(0,0,0,0.15);
+}
+
+.captcha-text {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+
+.captcha-title {
+    color: #ffffff;
+    font-size: 1rem;
+    font-weight: bold;
+    letter-spacing: 1px;
+}
+
+.captcha-subtitle {
+    color: #cccccc;
+    font-size: 0.85rem;
+}
+
+/* Contenedor e Input Oculto del Checkbox */
+.captcha-checkbox-wrapper {
+    position: relative;
+    display: inline-block;
+    width: 42px;
+    height: 42px;
+    cursor: pointer;
+}
+
+    .captcha-checkbox-wrapper input {
+        position: absolute;
+        opacity: 0;
+        cursor: pointer;
+        height: 0;
+        width: 0;
+    }
+
+/* Caja Blanca de Checkbox con Esquinas Redondeadas */
+.captcha-checkmark {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 42px;
+    width: 42px;
+    background-color: #ffffff;
+    border-radius: 12px; /* Esquinas sutilmente redondeadas */
+    transition: background-color 0.2s;
+}
+
+/* Estado verificado (Muestra un tilde o cambia el fondo para dar feedback) */
+.captcha-checkbox-wrapper input:checked ~ .captcha-checkmark {
+    background-color: #5c667a;
+}
+
+    .captcha-checkbox-wrapper input:checked ~ .captcha-checkmark:after {
+        content: "✓";
+        position: absolute;
+        color: white;
+        font-size: 1.6rem;
+        left: 11px;
+        top: 2px;
+        font-weight: bold;
+    }
+
+/* =======================================================
+   BOTÓN CREATE Y REDIRECCIÓN
+   ======================================================= */
+.btn-create {
+    background-color: #5c667a; /* Color azul/gris de la cabecera del login */
+    color: #ffffff;
+    border: none;
+    outline: none;
+    width: 100%;
+    padding: 0.8rem;
+    font-size: 1.3rem;
+    font-weight: bold;
+    border-radius: 50px; /* Botón cápsula */
+    cursor: pointer;
+    letter-spacing: 1px;
+    transition: background-color 0.2s, transform 0.1s;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.15);
+}
+
+    .btn-create:hover {
+        background-color: #4b5466;
+    }
+
+    .btn-create:active {
+        transform: scale(0.99);
+    }
+
+.login-redirect {
+    text-align: center;
+    margin-top: 1.2rem;
+    font-size: 0.9rem;
+    color: #1a1a1a;
+}
+
+    .login-redirect a {
+        color: #1d4ed8;
+        text-decoration: underline;
+        font-weight: 600;
+    }
+
+        .login-redirect a:hover {
+            color: #ffffff; /* Brilla en blanco al pasar el mouse sobre el fondo gris */
+        }

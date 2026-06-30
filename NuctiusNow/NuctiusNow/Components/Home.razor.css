@@ -1,0 +1,236 @@
+﻿/* =======================================================
+   CONTENEDOR PRINCIPAL DARK Y CONFIGURACIÓN BASE
+   ======================================================= */
+.home-page-container {
+    background-color: #111112; /* Gris ultra oscuro de tu paleta real */
+    color: #ffffff;
+    min-height: 100vh;
+    padding: 3rem 2rem 14rem 2rem; /* Espacio prudencial abajo para el despliegue del menú */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    font-family: Arial, Helvetica, sans-serif;
+    box-sizing: border-box;
+}
+
+.home-wrapper {
+    position: relative;
+    width: 100%;
+    max-width: 1250px;
+}
+
+/* =======================================================
+   GRID DE CATEGORÍAS (3x3 - Inspirado fielmente en la captura)
+   ======================================================= */
+.categories-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.5rem;
+}
+
+/* Limpieza absoluta de estilos de enlace */
+.category-card-link,
+.category-card-link:hover,
+.category-card-link:focus,
+.category-card-link:visited {
+    text-decoration: none !important;
+    color: inherit !important;
+    display: block;
+}
+
+/* Tarjetas con imagen de fondo */
+.category-card {
+    position: relative;
+    height: 220px;
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    border-radius: 24px; /* Bordes redondeados elegantes */
+    overflow: hidden;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    border: 1px solid #1f2023;
+    transition: transform 0.3s cubic-bezier(0.25, 1, 0.5, 1), border-color 0.3s ease;
+    cursor: pointer;
+}
+
+/* Capa oscura (Overlay) nativa para legibilidad del texto */
+.card-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.65); /* Filtro cinemático oscuro */
+    transition: background-color 0.3s ease;
+    z-index: 1;
+}
+
+/* Títulos de categorías centrados */
+.category-title {
+    position: relative;
+    z-index: 2;
+    font-family: "Times New Roman", Times, serif; /* Estilo clásico/formal como la captura */
+    font-size: 1.4rem;
+    font-weight: bold;
+    letter-spacing: 2px;
+    color: #ffffff;
+    margin: 0;
+    text-shadow: 0 4px 12px rgba(0, 0, 0, 0.9);
+    transition: letter-spacing 0.3s ease;
+}
+
+/* =======================================================
+   COMPORTAMIENTO INTERACTIVO HOVER (Sutil y Premium)
+   ======================================================= */
+.category-card-link:hover .category-card {
+    transform: scale(1.03);
+    border-color: #3b82f6; /* Destello reactivo azul opcional */
+}
+
+.category-card-link:hover .card-overlay {
+    background-color: rgba(0, 0, 0, 0.45); /* Aclara sutilmente la imagen al enfocar */
+}
+
+.category-card-link:hover .category-title {
+    letter-spacing: 4px; /* Pequeña expansión tipográfica dinámica */
+}
+
+/* =======================================================
+   MENÚ FLOTANTE INFERIOR INTERACTIVO
+   ======================================================= */
+.floating-menu-container {
+    position: fixed;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%) translateY(calc(100% - 46px));
+    z-index: 100;
+    transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+    .floating-menu-container:hover {
+        transform: translateX(-50%) translateY(0);
+    }
+
+.floating-menu-card {
+    background-color: #ffffff;
+    border-radius: 20px 20px 0 0;
+    width: 460px;
+    box-shadow: 0 -15px 35px rgba(0, 0, 0, 0.7);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.menu-tab {
+    background-color: #ffffff;
+    color: #000000;
+    text-align: center;
+    padding: 0.7rem;
+    font-size: 1.2rem;
+    font-weight: bold;
+    letter-spacing: 0.05em;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.menu-content {
+    display: flex;
+    gap: 1.25rem;
+    padding: 1.25rem;
+    background-color: #f9fafb;
+}
+
+.menu-actions {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.menu-btn {
+    background-color: #ffffff;
+    border: 1px solid #e5e7eb;
+    color: #374151;
+    padding: 0.6rem 1rem;
+    border-radius: 8px;
+    text-align: left;
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    width: 100%;
+    transition: all 0.15s ease;
+}
+
+    .menu-btn:hover {
+        background-color: #f3f4f6;
+        color: #000000;
+    }
+
+.menu-btn-active {
+    border-color: #f87171 !important;
+    color: #ef4444 !important;
+    background-color: #fef2f2;
+}
+
+.premium-box {
+    width: 140px;
+    background-color: #b45309;
+    border-radius: 10px;
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+}
+
+    .premium-box h4 {
+        margin: 0 0 0.75rem 0;
+        font-size: 0.7rem;
+        color: #fef3c7;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+
+.status-badge.active {
+    background-color: #064e3b;
+    color: #34d399;
+    font-weight: bold;
+    font-size: 0.85rem;
+    padding: 0.4rem 0.8rem;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    width: 100%;
+    justify-content: center;
+    box-sizing: border-box;
+}
+
+.status-badge .dot {
+    font-size: 0.6rem;
+}
+
+/* =======================================================
+   RESPONSIVE DESIGN (MOBILE)
+   ======================================================= */
+@media (max-width: 900px) {
+    .categories-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 600px) {
+    .categories-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .category-card {
+        height: 180px;
+    }
+
+    .floating-menu-card {
+        width: 92vw;
+    }
+}

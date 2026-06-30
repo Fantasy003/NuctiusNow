@@ -1,0 +1,120 @@
+﻿@page "/"
+
+<div class="home-page-container">
+    <div class="home-wrapper">
+
+        <div class="categories-grid">
+            @foreach (var cat in Categorias)
+            {
+                var imagenACargar = !string.IsNullOrEmpty(cat.ImagenNoticiaIA)
+                ? cat.ImagenNoticiaIA
+                : cat.ImagenUrlRespaldoInternet;
+
+                <a href="/news/@cat.Id" class="category-card-link">
+                    <div class="category-card" style="background-image: url('@imagenACargar');">
+                        <div class="card-overlay"></div>
+                        <h2 class="category-title">@cat.Nombre.ToUpper()</h2>
+                    </div>
+                </a>
+            }
+        </div>
+
+        <div class="floating-menu-container">
+            <div class="floating-menu-card">
+                <div class="menu-tab">
+                    NuctiusNow
+                </div>
+                <div class="menu-content">
+                    <div class="menu-actions">
+                        <button class="menu-btn menu-btn-active">Home</button>
+                        <button class="menu-btn">Just for you</button>
+                        <button class="menu-btn">User settings</button>
+                        <button class="menu-btn">Help</button>
+                    </div>
+                    <div class="premium-box">
+                        <h4>Premium Status</h4>
+                        <div class="status-badge active">
+                            <span class="dot">●</span> Activo
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+@code {
+    // Modelo básico para renderizar el grid dinámicamente
+    public class CategoriaModel
+    {
+        public string Id { get; set; }
+        public string Nombre { get; set; }
+        public string ImagenNoticiaIA { get; set; } // Aquí la IA inyecta la primera imagen que encuentra
+        public string ImagenUrlRespaldoInternet { get; set; } // Link estático de internet por si la IA no encuentra nada
+    }
+
+    private List<CategoriaModel> Categorias = new();
+
+    protected override void OnInitialized()
+    {
+        // Simulamos la carga inicial. Cuando la IA busque, seteará 'ImagenNoticiaIA'
+        Categorias = new List<CategoriaModel>
+        {
+            new CategoriaModel {
+                Id = "politics",
+                Nombre = "Politics",
+                ImagenNoticiaIA = "", // Si viene vacío, el código usa el de abajo
+                ImagenUrlRespaldoInternet = "https://images.unsplash.com/photo-1540910419892-4a36d2c3266c?w=500"
+            },
+            new CategoriaModel {
+                Id = "sports",
+                Nombre = "Sports",
+                ImagenNoticiaIA = "https://tu-api-noticias.com/imagenes/gol-alemania.jpg", // Ejemplo: La IA encontró una foto real
+                ImagenUrlRespaldoInternet = "https://images.unsplash.com/photo-1508098682722-e99c43a406b2?w=500"
+            },
+            new CategoriaModel {
+                Id = "technology",
+                Nombre = "Technology",
+                ImagenNoticiaIA = "",
+                ImagenUrlRespaldoInternet = "https://images.unsplash.com/photo-1518770660439-4636190af475?w=500"
+            },
+            new CategoriaModel {
+                Id = "economy",
+                Nombre = "Economy",
+                ImagenNoticiaIA = "",
+                ImagenUrlRespaldoInternet = "https://images.unsplash.com/photo-1590283603385-17ffb3a7f29f?w=500"
+            },
+            new CategoriaModel {
+                Id = "health",
+                Nombre = "Health",
+                ImagenNoticiaIA = "",
+                ImagenUrlRespaldoInternet = "https://images.unsplash.com/photo-1505751172876-fa1923c5c528?w=500"
+            },
+            new CategoriaModel {
+                Id = "education",
+                Nombre = "Education",
+                ImagenNoticiaIA = "",
+                ImagenUrlRespaldoInternet = "https://images.unsplash.com/photo-1427504494785-3a9ca7044f45?w=500"
+            },
+            new CategoriaModel {
+                Id = "turism",
+                Nombre = "Turism",
+                ImagenNoticiaIA = "",
+                ImagenUrlRespaldoInternet = "https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?w=500"
+            },
+            new CategoriaModel {
+                Id = "culture",
+                Nombre = "Culture",
+                ImagenNoticiaIA = "",
+                ImagenUrlRespaldoInternet = "https://images.unsplash.com/photo-1460661419201-fd4cecdf8a8b?w=500"
+            },
+            new CategoriaModel {
+                Id = "society",
+                Nombre = "Society",
+                ImagenNoticiaIA = "",
+                ImagenUrlRespaldoInternet = "https://images.unsplash.com/photo-1517486808906-6ca8b3f04846?w=500"
+            }
+        };
+    }
+}

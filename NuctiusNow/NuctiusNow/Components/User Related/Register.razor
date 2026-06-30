@@ -1,0 +1,88 @@
+﻿@page "/register"
+@rendermode InteractiveServer
+
+<PageTitle>Register - NuctiusNow</PageTitle>
+
+<div class="register-page-container">
+
+    <div class="register-card">
+        <div class="register-header">
+            <h1>REGISTER</h1>
+        </div>
+
+        <div class="register-body">
+            <EditForm Model="@registerModel" OnValidSubmit="HandleRegister">
+
+                <div class="form-group">
+                    <label for="email">Email</label>
+                    <input type="email" id="email" @bind-value="registerModel.Email" autocomplete="off" />
+                </div>
+
+                <div class="form-group">
+                    <label for="username">Username</label>
+                    <input type="text" id="username" @bind-value="registerModel.Username" autocomplete="off" />
+                </div>
+
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" @bind-value="registerModel.Password" />
+                </div>
+
+                <div class="form-group">
+                    <label for="re-password">Re-enter password</label>
+                    <input type="password" id="re-password" @bind-value="registerModel.ConfirmPassword" />
+                </div>
+
+                <div class="captcha-box">
+                    <div class="captcha-text">
+                        <span class="captcha-title">CAPTCHA</span>
+                        <span class="captcha-subtitle">Verificar captcha</span>
+                    </div>
+                    <label class="captcha-checkbox-wrapper">
+                        <input type="checkbox" @bind="registerModel.IsCaptchaVerified" />
+                        <span class="captcha-checkmark"></span>
+                    </label>
+                </div>
+
+                <button type="submit" class="btn-create">CREATE</button>
+
+                <div class="login-redirect">
+                    Already have an account? <NavLink href="login">Login here.</NavLink>
+                </div>
+
+            </EditForm>
+        </div>
+    </div>
+
+</div>
+
+@code {
+    private RegisterFields registerModel = new();
+
+    private void HandleRegister()
+    {
+        if (!registerModel.IsCaptchaVerified)
+        {
+            Console.WriteLine("Por favor, verifica el CAPTCHA.");
+            return;
+        }
+
+        if (registerModel.Password != registerModel.ConfirmPassword)
+        {
+            Console.WriteLine("Las contraseñas no coinciden.");
+            return;
+        }
+
+        // Lógica de registro aquí
+        Console.WriteLine($"Usuario registrado de forma exitosa: {registerModel.Username}");
+    }
+
+    public class RegisterFields
+    {
+        public string Email { get; set; } = string.Empty;
+        public string Username { get; set; } = string.Empty;
+        public string Password { get; set; } = string.Empty;
+        public string ConfirmPassword { get; set; } = string.Empty;
+        public bool IsCaptchaVerified { get; set; }
+    }
+}

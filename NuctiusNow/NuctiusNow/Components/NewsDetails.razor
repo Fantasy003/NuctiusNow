@@ -1,0 +1,54 @@
+﻿@page "/noticia-detalle/{Id:int}"
+@rendermode InteractiveServer
+
+<PageTitle>Detalle de la Noticia - NuctiusNow</PageTitle>
+
+<div class="detalle-page-container">
+
+    <div class="back-nav">
+        <NavLink href="just-for-you" class="btn-back">⬅ Volver a Just For You</NavLink>
+    </div>
+
+    <article class="detalle-card">
+        <div class="meta-info">
+            <span class="categoria">@Categoria</span>
+            <span class="noticia-id">Noticia ID: #@Id</span>
+        </div>
+
+        <h1 class="detalle-title">@Titulo</h1>
+
+        <div class="detalle-content-layout">
+            <img src="@UrlImagen" class="detalle-img" alt="Imagen Noticia Full" />
+
+            <div class="detalle-text">
+                <h3>Resumen Principal</h3>
+                <p class="body-destacado">@Contenido</p>
+
+                <h3>Cuerpo Completo de la Noticia</h3>
+                <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.</p>
+                <p>Añadiendo contexto real a la información visual analizada de la aplicación, este segmento de datos simula el despliegue dinámico de información extendida requerida para la experiencia del usuario final en portales premium.</p>
+            </div>
+        </div>
+    </article>
+
+</div>
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private string Categoria { get; set; } = "Cargando...";
+    private string Titulo { get; set; } = "Cargando...";
+    private string Contenido { get; set; } = "";
+    private string UrlImagen { get; set; } = "https://picsum.photos/400/300";
+
+    protected override void OnInitialized()
+    {
+        // Simulamos la búsqueda en base al ID que vino por URL
+        if (Id == 1) { Categoria = "Technology"; Titulo = "NVIDIA: SPARK PROCESSOR"; UrlImagen = "https://picsum.photos/id/0/400/300"; }
+        else if (Id == 2) { Categoria = "Sports"; Titulo = "WORLD CUP: URUGUAY ELIMINATED"; UrlImagen = "https://picsum.photos/id/73/400/300"; }
+        else if (Id == 3) { Categoria = "Weather"; Titulo = "ARGENTINA: RAINING ON MONDAY"; UrlImagen = "https://picsum.photos/id/401/400/300"; }
+        else { Categoria = "Technology"; Titulo = "AMD: THEIR LAST INNOVATION"; UrlImagen = "https://picsum.photos/id/160/400/300"; }
+
+        Contenido = "DASDADADADAADASDDADSADASDASDASDASDASDASDADADADADADADADADADADADADADADADASDASDASDADADADASDADADASDADADADSADADADADADADDADASDADADADADADASDADADADADSDDADADADADADADADADADADADADADADADSADASDASDADADADSADADADADADASDADADADA";
+    }
+}

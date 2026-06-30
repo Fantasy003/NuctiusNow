@@ -1,0 +1,90 @@
+﻿.detalle-page-container {
+    background-color: #111112;
+    color: #ffffff;
+    min-height: 100vh;
+    padding: 3rem 2rem;
+    font-family: Arial, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    box-sizing: border-box;
+}
+
+.back-nav {
+    width: 100%;
+    max-width: 800px;
+    margin-bottom: 1.5rem;
+}
+
+.btn-back {
+    color: #3b82f6;
+    text-decoration: none;
+    font-weight: bold;
+}
+
+    .btn-back:hover {
+        text-decoration: underline;
+    }
+
+.detalle-card {
+    background-color: #18191b;
+    border: 1px solid #232427;
+    border-radius: 24px;
+    padding: 2.5rem;
+    width: 100%;
+    max-width: 800px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+}
+
+.meta-info {
+    display: flex;
+    justify-content: space-between;
+    color: #88888d;
+    font-size: 0.9rem;
+    margin-bottom: 1rem;
+}
+
+.categoria {
+    font-weight: bold;
+    color: #3b82f6;
+}
+
+.detalle-title {
+    font-size: 2.2rem;
+    margin-top: 0;
+    margin-bottom: 2rem;
+}
+
+.detalle-content-layout {
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+}
+
+.detalle-img {
+    width: 100%;
+    max-height: 380px;
+    object-fit: cover;
+    border-radius: 16px;
+}
+
+.detalle-text h3 {
+    color: #ffffff;
+    border-bottom: 1px solid #333;
+    padding-bottom: 0.5rem;
+    margin-top: 1.5rem;
+}
+
+.body-destacado {
+    color: #b3b3b3;
+    line-height: 1.6;
+    text-align: justify;
+    word-break: break-all;
+    font-style: italic;
+}
+
+.detalle-text p {
+    color: #cccccc;
+    line-height: 1.6;
+    text-align: justify;
+}

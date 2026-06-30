@@ -1,0 +1,118 @@
+﻿@page "/just-for-you"
+@rendermode InteractiveServer
+
+<PageTitle>Just For You - NuctiusNow</PageTitle>
+
+<div class="jfy-page-container">
+
+    <div class="jfy-wrapper">
+
+        <div class="jfy-grid">
+            @for (int i = 0; i < Math.Min(4, NoticiasPersonalizadas.Count); i++)
+            {
+                var noticia = NoticiasPersonalizadas[i];
+
+                <NavLink href="@($"noticia-detalle/{noticia.Id}")" class="news-box-link">
+                    <div class="news-box">
+                        <span class="category-tag">@noticia.Categoria</span>
+                        <h2 class="news-title">@noticia.Titulo</h2>
+
+                        <div class="news-content-flex">
+                            <div class="news-text-side">
+                                <span class="summary-label">NEWS SUMMARY</span>
+                                <p class="news-body">@noticia.Contenido</p>
+                            </div>
+
+                            <div class="news-image-side">
+                                <img src="@noticia.UrlImagen" alt="News Image" />
+                            </div>
+                        </div>
+                    </div>
+                </NavLink>
+            }
+        </div>
+
+        <div class="center-refresh-zone">
+            <button class="btn-refresh" @onclick="RefreshFeed">
+                <span class="refresh-text-top">Refresh</span>
+                <div class="refresh-icon-circle">
+                    <svg viewBox="0 0 24 24" class="sync-icon">
+                        <path d="M19 8l-4 4h3c0 3.31-2.69 6-6 6a5.87 5.87 0 0 1-2.8-.7l-1.46 1.46A7.93 7.93 0 0 0 12 20c4.42 0 8-3.58 8-8h3l-4-4zM6 12c0-3.31 2.69-6 6-6 1.01 0 1.97.25 2.8.7l1.46-1.46A7.93 7.93 0 0 0 12 4c-4.42 0-8 3.58-8 8H1l4 4 4-4H6z" />
+                    </svg>
+                </div>
+                <span class="refresh-text-bottom">News</span>
+            </button>
+        </div>
+
+    </div>
+
+    <div class="floating-menu-container">
+        <div class="floating-menu-card">
+
+            <div class="menu-content">
+                <div class="menu-actions">
+                    <NavLink href=""><button class="menu-btn">Home</button></NavLink>
+                    <NavLink href="just-for-you"><button class="menu-btn menu-btn-active">Just for you</button></NavLink>
+                    <NavLink href="user-settings"><button class="menu-btn">User settings</button></NavLink>
+                    <button class="menu-btn">Help</button>
+                </div>
+
+                <div class="premium-box">
+                    <h4>Premium Status</h4>
+                    @if (isPremium && isUserLoggedIn)
+                    {
+                        <div class="status-badge active">🟢 Activo</div>
+                    }
+                    else
+                    {
+                        <div class="status-badge inactive">🔴 Inactivo</div>
+                    }
+                </div>
+            </div>
+
+            <div class="menu-tab">
+                <span>NuctiusNow</span>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+@code {
+    private bool isUserLoggedIn = true;
+    private bool isPremium = true;
+    private List<JfyItem> NoticiasPersonalizadas = new();
+
+    protected override void OnInitialized()
+    {
+        GenerarNoticiasJFY();
+    }
+
+    private void RefreshFeed()
+    {
+        var random = new Random();
+        NoticiasPersonalizadas = NoticiasPersonalizadas.OrderBy(_ => random.Next()).ToList();
+        StateHasChanged();
+    }
+
+    private void GenerarNoticiasJFY()
+    {
+        // Añadimos IDs únicos y placeholders de imágenes dinámicas para las pruebas
+        NoticiasPersonalizadas = new List<JfyItem>
+        {
+            new JfyItem { Id = 1, Categoria = "Technology", Titulo = "NVIDIA: SPARK PROCESSOR", Contenido = "DASDADADADAADASDDADSADASDASDASDASDASDASDADADADADADADADADADADADADADADADASDASDASDADADADASDADADASDADADADSADADADADADADDADASDADADADADADASDADADADADSDDADADADADADADADADADADADADADADADSADASDASDADADADSADADADADADASDADADADAD", UrlImagen = "https://picsum.photos/id/0/150/150" },
+            new JfyItem { Id = 2, Categoria = "Sports", Titulo = "WORLD CUP: URUGUAY ELIMINATED", Contenido = "DASDADADADAADASDDADSADASDASDASDASDASDASDADADADADADADADADADADADADADADADASDASDASDADADADASDADADASDADADADSADADADADADADDADASDADADADADADASDADADADADSDDADADADADADADADADADADADADADADADSADASDASDADADADSADADADADADASDADADADAD", UrlImagen = "https://picsum.photos/id/73/150/150" },
+            new JfyItem { Id = 3, Categoria = "Weather", Titulo = "ARGENTINA: RAINING ON MOND", Contenido = "DASDADADADAADASDDADSADASDASDASDASDASDASDADADADADADADADADADADADADADADADASDASDASDADADADASDADADASDADADADSADADADADADADDADASDADADADADADASDADADADADSDDADADADADADADADADADADADADADADADSADASDASDADADADSADADADADADASDADADADAD", UrlImagen = "https://picsum.photos/id/401/150/150" },
+            new JfyItem { Id = 4, Categoria = "Technology", Titulo = "AMD: THEIR LAST INNOVATION", Contenido = "DASDADADADAADASDDADSADASDASDASDASDASDASDADADADADADADADADADADADADADADADASDASDASDADADADASDADADASDADADADSADADADADADADDADASDADADADADADASDADADADADSDDADADADADADADADADADADADADADADADSADASDASDADADADSADADADADADASDADADADAD", UrlImagen = "https://picsum.photos/id/160/150/150" }
+        };
+    }
+
+    public class JfyItem
+    {
+        public int Id { get; set; }
+        public string Categoria { get; set; } = "";
+        public string Titulo { get; set; } = "";
+        public string Contenido { get; set; } = "";
+        public string UrlImagen { get; set; } = "";
+    }
+}

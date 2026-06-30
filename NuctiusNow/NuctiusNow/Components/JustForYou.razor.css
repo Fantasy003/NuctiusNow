@@ -1,0 +1,365 @@
+﻿/* =======================================================
+   CONTENEDOR PRINCIPAL DARK Y WRAPPER
+   ======================================================= */
+.jfy-page-container {
+    background-color: #111112;
+    color: #ffffff;
+    min-height: 100vh;
+    padding: 2rem 2rem 18rem 2rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    font-family: Arial, Helvetica, sans-serif;
+    box-sizing: border-box;
+}
+
+.jfy-wrapper {
+    position: relative;
+    width: 100%;
+    max-width: 1100px;
+}
+
+/* Grid simétrico de 2 columnas */
+.jfy-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 4rem 6rem;
+}
+
+/* =======================================================
+   ENRUTADOR DE LA CAJA (CORREGIDO: Cero subrayados ni azul)
+   ======================================================= */
+.news-box-link,
+.news-box-link:hover,
+.news-box-link:focus,
+.news-box-link:active,
+.news-box-link:visited {
+    text-decoration: none !important;
+    outline: none !important;
+    color: #ffffff !important; /* Fuerza a mantener tu color blanco base */
+    display: block;
+}
+
+    /* =======================================================
+   ASIGNACIÓN DE DIRECCIÓN DE EXPANSIÓN SIMÉTRICA
+   ======================================================= */
+
+    /* COLUMNA IZQUIERDA (Noticias impares: 1 y 3) -> Se expanden hacia la IZQUIERDA */
+    .news-box-link:nth-child(odd) .news-box {
+        transform-origin: right center;
+    }
+
+    .news-box-link:nth-child(odd) .news-content-flex {
+        flex-direction: row-reverse;
+    }
+
+    /* COLUMNA DERECHA (Noticias pares: 2 y 4) -> Se expanden hacia la DERECHA */
+    .news-box-link:nth-child(even) .news-box {
+        transform-origin: left center;
+    }
+
+    .news-box-link:nth-child(even) .news-content-flex {
+        flex-direction: row;
+    }
+
+/* =======================================================
+   ESTILO BASE DE LAS TARJETAS DE NOTICIAS
+   ======================================================= */
+.news-box {
+    background-color: #18191b;
+    border: 1px solid #232427;
+    border-radius: 40px;
+    padding: 2rem 2.5rem;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    min-height: 250px;
+    /* Usamos transiciones limpias controlando que el layout no mute de tamaño físico */
+    transition: transform 0.3s cubic-bezier(0.25, 1, 0.5, 1), border-color 0.3s ease;
+    box-sizing: border-box;
+}
+
+/* EFECTO HOVER: Escala la tarjeta en base a su transform-origin asignado */
+.news-box-link:hover .news-box {
+    transform: scale(1.06);
+    border-color: #3b82f6; /* Borde reactivo azul sutil en la caja, no en el texto */
+    z-index: 5;
+}
+
+/* Contenedor interno flexible para texto e imagen */
+.news-content-flex {
+    display: flex;
+    gap: 0px;
+    transition: gap 0.3s ease;
+    margin-top: 0.5rem;
+}
+
+.news-box-link:hover .news-content-flex {
+    gap: 1.5rem;
+}
+
+.news-text-side {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+/* =======================================================
+   COLUMNA DE IMAGEN ANIMADA (Efecto de aparición lateral)
+   ======================================================= */
+.news-image-side {
+    width: 0;
+    opacity: 0;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: width 0.35s cubic-bezier(0.25, 1, 0.5, 1), opacity 0.25s ease;
+}
+
+    .news-image-side img {
+        width: 120px;
+        height: 120px;
+        object-fit: cover;
+        border-radius: 20px;
+        border: 1px solid #333336;
+    }
+
+/* Al hacer hover sobre el NavLink, expande la sección de la imagen */
+.news-box-link:hover .news-image-side {
+    width: 130px;
+    opacity: 1;
+}
+
+/* Elementos internos de la noticia */
+.category-tag {
+    position: absolute;
+    top: 1.5rem;
+    right: 2.5rem;
+    font-size: 0.85rem;
+    color: #88888d;
+    font-weight: 500;
+}
+
+.news-title {
+    font-size: 1.25rem;
+    font-weight: bold;
+    margin-top: 1rem;
+    margin-bottom: 0.5rem;
+    color: #ffffff !important;
+}
+
+.summary-label {
+    font-size: 0.75rem;
+    font-weight: bold;
+    letter-spacing: 1px;
+    color: #66666a;
+    text-align: center;
+    margin-bottom: 0.5rem;
+}
+
+.news-body {
+    font-size: 0.8rem;
+    line-height: 1.5;
+    color: #b3b3b3;
+    text-align: justify;
+    margin: 0;
+    word-break: break-all;
+}
+
+/* =======================================================
+   EJE CENTRAL: REFRESH NEWS (ANCLADO AL CENTRO REAL)
+   ======================================================= */
+.center-refresh-zone {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 10;
+    width: 80px; /* Le asignamos un tamaño fijo al contenedor para que no altere el layout */
+    height: 100px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.btn-refresh {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    position: absolute; /* Queda completamente aislado de las mutaciones de las cajas vecinas */
+}
+
+.refresh-text-top, .refresh-text-bottom {
+    font-size: 0.9rem;
+    font-weight: bold;
+    color: #ffffff;
+}
+
+.refresh-icon-circle {
+    width: 50px;
+    height: 50px;
+    background-color: #111112;
+    border: 3px solid #ffffff;
+    border-radius: 50%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin: 0.3rem 0;
+}
+
+.sync-icon {
+    width: 32px;
+    height: 32px;
+    fill: #ffffff;
+}
+
+/* =======================================================
+   MENÚ FLOTANTE CON EFECTO HOVER
+   ======================================================= */
+.floating-menu-container {
+    position: fixed;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%) translateY(calc(100% - 42px));
+    z-index: 100;
+    transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+    .floating-menu-container:hover {
+        transform: translateX(-50%) translateY(0);
+    }
+
+.floating-menu-card {
+    background-color: #1e1e24;
+    border: 2px solid black;
+    border-radius: 16px 16px 0 0;
+    width: 480px;
+    box-shadow: 0 -10px 25px -5px rgba(0, 0, 0, 0.7);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.menu-tab {
+    background-color: white;
+    color: black;
+    text-align: center;
+    padding: 0.5rem;
+    font-size: 24px;
+    font-weight: bold;
+    font-family: 'Sans Serif Collection', Arial, sans-serif;
+    cursor: pointer;
+    order: -1;
+}
+
+.menu-content {
+    display: flex;
+    gap: 1.5rem;
+    padding: 1.5rem;
+    background-color: whitesmoke;
+}
+
+.menu-actions {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.menu-btn {
+    background-color: ghostwhite;
+    border: 1px solid #2d2d34;
+    color: black;
+    padding: 0.6rem 1rem;
+    border-radius: 8px;
+    text-align: left;
+    font-size: 0.85rem;
+    font-family: 'Sans Serif Collection', Arial, sans-serif;
+    cursor: pointer;
+    width: 100%;
+    transition: background-color 0.2s;
+}
+
+    .menu-btn:hover {
+        background-color: #2d2d34;
+        color: #ffffff;
+    }
+
+.menu-btn-active {
+    border-color: #ef4444 !important;
+    color: #ef4444 !important;
+    font-weight: bold;
+}
+
+.premium-box {
+    width: 160px;
+    border: 1px solid #2d2d34;
+    border-radius: 10px;
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background-color: darkgoldenrod;
+}
+
+    .premium-box h4 {
+        margin: 0 0 0.75rem 0;
+        font-size: 0.75rem;
+        font-family: "Sans Serif Collection", Arial, sans-serif;
+        color: black;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+
+.status-badge {
+    font-weight: bold;
+    font-size: 0.9rem;
+    padding: 0.4rem 0.8rem;
+    border-radius: 6px;
+    width: 100%;
+    text-align: center;
+    box-sizing: border-box;
+}
+
+    .status-badge.active {
+        background-color: #064e3b;
+        color: #34d399;
+    }
+
+    .status-badge.inactive {
+        background-color: #7f1d1d;
+        color: #fca5a5;
+    }
+
+/* =======================================================
+   RESPONSIVE DESIGN (MOBILE ADAPTATION)
+   ======================================================= */
+@media (max-width: 768px) {
+    .jfy-grid {
+        grid-template-columns: 1fr;
+        gap: 2rem;
+    }
+
+    .news-box-link:hover .news-image-side {
+        width: 0;
+        opacity: 0;
+    }
+
+    .news-box-link:hover .news-content-flex {
+        gap: 0;
+    }
+
+    .news-box-link:nth-child(odd) .news-box,
+    .news-box-link:nth-child(even) .news-box {
+        transform-origin: center center;
+    }
+
+    .floating-menu-card {
+        width: 90vw;
+    }
+}
