@@ -1,5 +1,6 @@
 using NuctiusNow.Client.Pages;
 using NuctiusNow.Components;
+using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -9,6 +10,11 @@ builder.Services.AddRazorComponents()
     .AddInteractiveWebAssemblyComponents();
 
 var app = builder.Build();
+
+var connectionString = builder.Configuration.GetConnectionString("PostgresConnection");
+
+builder.Services.AddDbContext<ApplicationDbContext>(options =>
+    options.UseNpgsql(connectionString));
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
