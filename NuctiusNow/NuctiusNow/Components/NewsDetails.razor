@@ -12,7 +12,7 @@
     <article class="detalle-card">
         <div class="meta-info">
             <span class="categoria">@Categoria</span>
-            <span class="noticia-id">Noticia ID: #@Id</span>
+            <span class="noticia-id">News N°: #@Id</span>
         </div>
 
         <h1 class="detalle-title">@Titulo</h1>
@@ -29,6 +29,23 @@
                 <p>Añadiendo contexto real a la información visual analizada de la aplicación, este segmento de datos simula el despliegue dinámico de información extendida requerida para la experiencia del usuario final en portales premium.</p>
             </div>
         </div>
+
+        <div class="article-actions-bar">
+            <div class="reactions-group">
+                <button class="btn-action btn-like @(hasLiked ? "active-like" : "")" @onclick="ManejarLike">
+                    <span class="action-icon">👍</span>
+                    <span class="action-count">@likeCount</span>
+                </button>
+
+                <button class="btn-action btn-dislike @(hasDisliked ? "active-dislike" : "")" @onclick="ManejarDislike">
+                    <span class="action-icon">👎</span>
+                </button>
+            </div>
+
+            <button class="btn-action btn-share" @onclick="ManejarShare">
+                <span class="action-icon">📨</span> Share
+            </button>
+        </div>
     </article>
 
 </div>
@@ -41,14 +58,55 @@
     private string Contenido { get; set; } = "";
     private string UrlImagen { get; set; } = "https://picsum.photos/400/300";
 
+    // Estados de interacción simulados
+    private int likeCount = 42;
+    private bool hasLiked = false;
+    private bool hasDisliked = false;
+
     protected override void OnInitialized()
     {
-        // Simulamos la búsqueda en base al ID que vino por URL
         if (Id == 1) { Categoria = "Technology"; Titulo = "NVIDIA: SPARK PROCESSOR"; UrlImagen = "https://picsum.photos/id/0/400/300"; }
         else if (Id == 2) { Categoria = "Sports"; Titulo = "WORLD CUP: URUGUAY ELIMINATED"; UrlImagen = "https://picsum.photos/id/73/400/300"; }
         else if (Id == 3) { Categoria = "Weather"; Titulo = "ARGENTINA: RAINING ON MONDAY"; UrlImagen = "https://picsum.photos/id/401/400/300"; }
         else { Categoria = "Technology"; Titulo = "AMD: THEIR LAST INNOVATION"; UrlImagen = "https://picsum.photos/id/160/400/300"; }
 
         Contenido = "DASDADADADAADASDDADSADASDASDASDASDASDASDADADADADADADADADADADADADADADADASDASDASDADADADASDADADASDADADADSADADADADADADDADASDADADADADADASDADADADADSDDADADADADADADADADADADADADADADADSADASDASDADADADSADADADADADASDADADADA";
+    }
+
+    private void ManejarLike()
+    {
+        if (hasLiked)
+        {
+            likeCount--;
+            hasLiked = false;
+        }
+        else
+        {
+            likeCount++;
+            hasLiked = true;
+            if (hasDisliked) hasDisliked = false; // Desmarca dislike si estaba activo
+        }
+    }
+
+    private void ManejarDislike()
+    {
+        if (hasDisliked)
+        {
+            hasDisliked = false;
+        }
+        else
+        {
+            hasDisliked = true;
+            if (hasLiked)
+            {
+                likeCount--;
+                hasLiked = false; // Desmarca like si estaba activo
+            }
+        }
+    }
+
+    private void ManejarShare()
+    {
+        Console.WriteLine($"Enlace de la noticia #{Id} copiado al portapapeles.");
     }
 }

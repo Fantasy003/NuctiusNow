@@ -29,7 +29,7 @@
 }
 
     .register-header h1 {
-        color: #ffffff;
+        color: rgba(0, 0, 0, 0.25);
         margin: 0;
         font-size: 2.4rem;
         font-weight: bold;
@@ -187,4 +187,62 @@
 
         .login-redirect a:hover {
             color: #ffffff; /* Brilla en blanco al pasar el mouse sobre el fondo gris */
+        }
+
+/* Alerta de Error Superior */
+.error-alert {
+    background-color: #4a1d1d;
+    color: #f87171;
+    border: 1px solid #7f1d1d;
+    padding: 0.75rem 1rem;
+    border-radius: 12px;
+    font-size: 0.9rem;
+    margin-bottom: 1.5rem;
+    font-family: Arial, sans-serif;
+    text-align: left;
+}
+
+/* Envoltorio del Medidor de Contraseña */
+.strength-meter-wrapper {
+    margin-top: 0.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding-left: 0.5rem;
+}
+
+/* Barra de progreso de seguridad */
+.strength-bar {
+    height: 6px;
+    border-radius: 4px;
+    transition: width 0.3s ease, background-color 0.3s ease;
+    width: 0%;
+}
+
+/* Texto indicador de fuerza */
+.strength-text {
+    font-size: 0.8rem;
+    font-weight: bold;
+    font-family: Arial, sans-serif;
+}
+
+/* Disclaimer legal de reCAPTCHA v3 */
+.captcha-v3-disclaimer {
+    font-size: 0.75rem;
+    color: #cbd5e1;
+    opacity: 0.7;
+    margin-top: 1rem;
+    margin-bottom: 1.5rem;
+    line-height: 1.2;
+    font-family: Arial, sans-serif;
+    text-align: center;
+}
+
+    .captcha-v3-disclaimer a {
+        color: #ffd466; /* Amarillo GO de tu paleta */
+        text-decoration: none;
+    }
+
+        .captcha-v3-disclaimer a:hover {
+            text-decoration: underline;
         }

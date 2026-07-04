@@ -48,7 +48,7 @@
                 <div class="form-group">
                     <label>Birthday</label>
                     <div class="input-wrapper">
-                        <input type="text" @bind="userModel.Birthday" placeholder="DD/MM/YYYY" />
+                        <input type="date" @bind="userModel.Birthday" />
                         <span class="icon-calendar">📅</span>
                     </div>
                 </div>
@@ -85,6 +85,19 @@
                     </div>
 
                 </div>
+
+                <div class="settings-actions">
+                    <button class="btn-action btn-themes" @onclick="ManejarTemas">
+                        <span class="btn-icon">🎨</span> Themes
+                    </button>
+                    <button class="btn-action btn-logout" @onclick="ManejarLogout">
+                        <span class="btn-icon">🚪</span> Logout
+                    </button>
+                </div>
+
+                <button class="btn-action btn-apply" @onclick="GuardarCambios">
+                    <span class="btn-icon">💾</span> Apply Changes
+                </button>
             </div>
 
         </div>
@@ -97,11 +110,10 @@
 
     protected override void OnInitialized()
     {
-        // Datos iniciales idénticos a tu captura
         userModel.Email = "emailexample@example.com.ar";
         userModel.Username = "UsernameExample";
         userModel.Password = "********************";
-        userModel.Birthday = "19/03/2026";
+        userModel.Birthday = new DateTime(2026, 3, 19);
         userModel.Language = "English";
 
         userModel.Preferences = new List<string> {
@@ -113,9 +125,15 @@
         };
     }
 
+    // Lógica para el botón de Apply Changes
+    private void GuardarCambios()
+    {
+        // Acá mapearías tu 'userModel' para actualizar tu tabla de usuarios
+        Console.WriteLine($"Cambios guardados con éxito para el usuario: {userModel.Username}");
+    }
+
     private void AgregarPreferencia()
     {
-        // Lógica de simulación para agregar una nueva tag
         userModel.Preferences.Add("New Interest");
     }
 
@@ -124,12 +142,29 @@
         userModel.Preferences.Remove(target);
     }
 
+    // Lógica para el botón de Temas
+    private void ManejarTemas()
+    {
+        // Acá podés implementar un toggle de clases body o llamar a un JSInterop
+        Console.WriteLine("Cambiando el tema de la aplicación...");
+    }
+
+    // Lógica para el botón de Logout
+    private void ManejarLogout()
+    {
+        // Acá limpiarías tokens de sesión / AuthenticationStateProvider
+        Console.WriteLine("Cerrando sesión del usuario...");
+    }
+
     public class SettingsFields
     {
         public string Email { get; set; } = "";
         public string Username { get; set; } = "";
         public string Password { get; set; } = "";
-        public string Birthday { get; set; } = "";
+
+        // 2. Cambiado de string a DateTime
+        public DateTime Birthday { get; set; }
+
         public string Language { get; set; } = "";
         public List<string> Preferences { get; set; } = new();
     }

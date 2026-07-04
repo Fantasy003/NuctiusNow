@@ -129,7 +129,7 @@
     background-color: #ffffff;
     border-radius: 20px;
     padding: 1.5rem;
-    height: 100%;
+    height: auto; /* Cambiado de 100% para permitir que los botones empujen hacia abajo */
     min-height: 340px;
     display: flex;
     flex-direction: column;
@@ -211,3 +211,99 @@
     .btn-add:hover, .btn-remove:hover {
         opacity: 0.9;
     }
+
+/* =======================================================
+   NUEVO: Contenedor y Botones de Acción (Themes & Logout)
+   ======================================================= */
+.preferences-column {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem; /* Separación elegante entre la caja blanca y los botones */
+}
+
+.settings-actions {
+    display: flex;
+    gap: 1rem;
+    width: 100%;
+}
+
+.btn-action {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    border-radius: 50px; /* Estilo cápsula para hacer juego con tus inputs */
+    font-size: 0.95rem;
+    font-weight: bold;
+    font-family: Arial, sans-serif;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+    .btn-action:active {
+        transform: scale(0.97);
+    }
+
+/* Estilo para botón de Temas (Gris oscuro integrado) */
+.btn-themes {
+    background-color: #3b4454;
+    color: #ffffff;
+}
+
+    .btn-themes:hover {
+        background-color: #2e3542;
+        border-color: #ffd466; /* Detalle amarillo haciendo juego con tu avatar circle */
+    }
+
+/* Estilo para botón de Logout (Rojo opaco sutil que explota al pasar el mouse) */
+.btn-logout {
+    background-color: #4a2020;
+    color: #fca5a5;
+    border-color: #5a2626;
+}
+
+    .btn-logout:hover {
+        background-color: #dc2626;
+        color: #ffffff;
+        border-color: #dc2626;
+        box-shadow: 0 4px 15px rgba(220, 38, 38, 0.3);
+    }
+
+.btn-icon {
+    font-size: 1rem;
+}
+
+/* Estilo específico para Apply Changes (Verde lima idéntico a tu btn-add pero expandido) */
+.btn-apply {
+    background-color: #84cc16;
+    color: #ffffff;
+    border-color: #72b012;
+}
+
+.btn-apply:hover {
+    background-color: #65a30d;
+    border-color: #5b930a;
+    box-shadow: 0 4px 15px rgba(132, 204, 22, 0.4); /* Sombra brillante verde */
+}
+
+/* Oculta el ícono nativo del navegador pero expande su zona de clic */
+input[type="date"]::-webkit-calendar-picker-indicator {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: auto;
+    height: auto;
+    color: transparent;
+    background: transparent;
+    cursor: pointer;
+}
+
+/* Ajuste específico para que el texto de la fecha no se pise con tu emoji a la derecha */
+input[type="date"] {
+    padding-right: 3rem !important;
+}

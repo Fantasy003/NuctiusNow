@@ -21,22 +21,30 @@
 
         <div class="floating-menu-container">
             <div class="floating-menu-card">
-                <div class="menu-tab">
-                    NuctiusNow
-                </div>
+
                 <div class="menu-content">
                     <div class="menu-actions">
-                        <button class="menu-btn menu-btn-active">Home</button>
-                        <button class="menu-btn">Just for you</button>
-                        <button class="menu-btn">User settings</button>
+                        <NavLink href=""><button class="menu-btn menu-btn-active">Home</button></NavLink>
+                        <NavLink href="just-for-you"><button class="menu-btn">Just for you</button></NavLink>
+                        <NavLink href="user-settings"><button class="menu-btn">User settings</button></NavLink>
                         <button class="menu-btn">Help</button>
                     </div>
+
                     <div class="premium-box">
                         <h4>Premium Status</h4>
-                        <div class="status-badge active">
-                            <span class="dot">●</span> Activo
-                        </div>
+                        @if (isPremium && isUserLoggedIn)
+                        {
+                            <div class="status-badge active">🟢 Activo</div>
+                        }
+                        else
+                        {
+                            <div class="status-badge inactive">🔴 Inactivo</div>
+                        }
                     </div>
+                </div>
+
+                <div class="menu-tab">
+                    <span>NuctiusNow</span>
                 </div>
             </div>
         </div>
@@ -45,6 +53,8 @@
 </div>
 
 @code {
+    private bool isUserLoggedIn = true;
+    private bool isPremium = true;
     // Modelo básico para renderizar el grid dinámicamente
     public class CategoriaModel
     {

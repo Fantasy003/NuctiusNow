@@ -1,5 +1,6 @@
 ﻿@page "/register"
 @rendermode InteractiveServer
+@inject IJSRuntime JS
 
 <PageTitle>Register - NuctiusNow</PageTitle>
 
@@ -11,6 +12,11 @@
         </div>
 
         <div class="register-body">
+            @if (!string.IsNullOrEmpty(errorMessage))
+            {
+                <div class="error-alert">⚠️ @errorMessage</div>
+            }
+
             <EditForm Model="@registerModel" OnValidSubmit="HandleRegister">
 
                 <div class="form-group">
@@ -25,7 +31,15 @@
 
                 <div class="form-group">
                     <label for="password">Password</label>
-                    <input type="password" id="password" @bind-value="registerModel.Password" />
+                    <input type="password" id="password" @bind-value="registerModel.Password" @bind-value:event="oninput" />
+                    
+                    @if (!string.IsNullOrEmpty(registerModel.Password))
+                    {
+                        <div class="strength-meter-wrapper">
+                            <div class="strength-bar" style="width: @(passwordStrengthScore * 25)%; background-color: @StrengthBarColor;"></div>
+                            <span class="strength-text" style="color: @StrengthBarColor;">Strength: @passwordStrengthLabel</span>
+                        </div>
+                    }
                 </div>
 
                 <div class="form-group">
@@ -33,15 +47,10 @@
                     <input type="password" id="re-password" @bind-value="registerModel.ConfirmPassword" />
                 </div>
 
-                <div class="captcha-box">
-                    <div class="captcha-text">
-                        <span class="captcha-title">CAPTCHA</span>
-                        <span class="captcha-subtitle">Verificar captcha</span>
-                    </div>
-                    <label class="captcha-checkbox-wrapper">
-                        <input type="checkbox" @bind="registerModel.IsCaptchaVerified" />
-                        <span class="captcha-checkmark"></span>
-                    </label>
+                <div class="captcha-v3-disclaimer">
+                    This site is protected by reCAPTCHA and the Google 
+                    <a href="https://policies.google.com/privacy" target="_blank">Privacy Policy</a> and
+                    <a href="https://policies.google.com/terms" target="_blank">Terms of Service</a> apply.
                 </div>
 
                 <button type="submit" class="btn-create">CREATE</button>
@@ -58,24 +67,106 @@
 
 @code {
     private RegisterFields registerModel = new();
+    private string errorMessage = string.Empty;
+    
+    // Configuración de reCAPTCHA (Reemplazá con tu Site Key real de Google)
+    private const string RecaptchaSiteKey = "6Le87EMtAAAAADDzoh70r-IgORbWTvdLvRCfb3vT";
 
-    private void HandleRegister()
+    // Propiedades calculadas para el medidor de contraseña
+    private int passwordStrengthScore => CalculatePasswordStrength(registerModel.Password);
+    private string passwordStrengthLabel => GetStrengthLabel(passwordStrengthScore);
+    private string StrengthBarColor => GetStrengthColor(passwordStrengthScore);
+
+    private async Task HandleRegister()
     {
-        if (!registerModel.IsCaptchaVerified)
+        errorMessage = string.Empty;
+
+        // 1. Validación de Email (Debe contener '@')
+        if (string.IsNullOrWhiteSpace(registerModel.Email) || !registerModel.Email.Contains("@"))
         {
-            Console.WriteLine("Por favor, verifica el CAPTCHA.");
+            errorMessage = "The email address must contain an '@'.";
             return;
         }
 
+        // 2. Validación de longitud de contraseña
+        if (string.IsNullOrWhiteSpace(registerModel.Password) || registerModel.Password.Length < 8)
+        {
+            errorMessage = "The password must be at least 8 characters long.";
+            return;
+        }
+
+        // 3. Validación de coincidencia de contraseñas
         if (registerModel.Password != registerModel.ConfirmPassword)
         {
-            Console.WriteLine("Las contraseñas no coinciden.");
+            errorMessage = "Passwords do not match.";
             return;
         }
 
-        // Lógica de registro aquí
-        Console.WriteLine($"Usuario registrado de forma exitosa: {registerModel.Username}");
+        try
+        {
+            // 4. Llamada a reCAPTCHA v3 mediante JavaScript
+            // Le pasamos tu clave pública y la acción "register"
+            string recaptchaToken = await JS.InvokeAsync<string>("executeRecaptchaV3", RecaptchaSiteKey, "register");
+
+            if (string.IsNullOrEmpty(recaptchaToken))
+            {
+                errorMessage = "Captcha verification failed. Please try again.";
+                return;
+            }
+
+            // --- PASO POSTERIOR ---
+            // Acá mandarías 'recaptchaToken' a tu backend (.NET Web API o servicio interno)
+            // para validarlo contra el endpoint de Google usando tu Secret Key.
+            
+            Console.WriteLine($"Token de reCAPTCHA obtenido: {recaptchaToken.Substring(0, 10)}...");
+            Console.WriteLine($"Usuario registrado con éxito: {registerModel.Email}");
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Error validating Security Captcha. Make sure the script is loaded.";
+            Console.WriteLine(ex.Message);
+        }
     }
+
+    // Lógica para medir la fuerza de la contraseña
+    private int CalculatePasswordStrength(string password)
+    {
+        if (string.IsNullOrEmpty(password)) return 0;
+        
+        int score = 0;
+
+        // Criterio 1: Longitud mínima de 8 caracteres
+        if (password.Length >= 8) score++;
+
+        // Criterio 2: Contiene números
+        if (password.Any(char.IsDigit)) score++;
+
+        // Criterio 3: Contiene mayúsculas y minúsculas mezcladas
+        if (password.Any(char.IsUpper) && password.Any(char.IsLower)) score++;
+
+        // Criterio 4: Contiene caracteres especiales
+        if (password.Any(ch => !char.IsLetterOrDigit(ch))) score++;
+
+        return score; // Devuelve un valor de 0 a 4
+    }
+
+    private string GetStrengthLabel(int score) => score switch
+    {
+        1 => "Weak 🔴",
+        2 => "Medium 🟡",
+        3 => "Good 🔵",
+        4 => "Strong 🔥",
+        _ => "Too Short ❌"
+    };
+
+    private string GetStrengthColor(int score) => score switch
+    {
+        1 => "#ef4444", // Rojo
+        2 => "#f59e0b", // Amarillo/Naranja
+        3 => "#3b82f6", // Azul
+        4 => "#22c55e", // Verde
+        _ => "#9ca3af"  // Gris
+    };
 
     public class RegisterFields
     {
@@ -83,6 +174,5 @@
         public string Username { get; set; } = string.Empty;
         public string Password { get; set; } = string.Empty;
         public string ConfirmPassword { get; set; } = string.Empty;
-        public bool IsCaptchaVerified { get; set; }
     }
 }
