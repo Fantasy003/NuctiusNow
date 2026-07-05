@@ -1,5 +1,6 @@
 ﻿@page "/user-settings"
 @rendermode InteractiveServer
+@inject ThemeState ThemeState
 
 <PageTitle>User Settings - NuctiusNow</PageTitle>
 
@@ -15,63 +16,61 @@
             </div>
         </div>
 
-        <h1 class="main-title">User Settings</h1>
+        <h1 class="main-title">USER SETTINGS</h1>
 
         <div class="settings-grid">
 
             <div class="profile-column">
-
                 <div class="form-group">
-                    <label>Email</label>
+                    <label>Email Address</label>
                     <div class="input-wrapper">
-                        <input type="email" @bind="userModel.Email" />
-                        <span class="icon-edit">✏️</span>
+                        <input type="email" @bind="userModel.Email" class="dark-input" />
+                        <svg class="input-icon" viewBox="0 0 24 24"><path d="M20.71,7.04C21.1,6.65 21.1,6 20.71,5.63L18.37,3.29C18,2.9 17.35,2.9 16.96,3.29L15.12,5.12L18.87,8.87M3,17.25V21H6.75L17.81,9.93L14.07,6.18L3,17.25Z" /></svg>
                     </div>
                 </div>
 
                 <div class="form-group">
                     <label>Username</label>
                     <div class="input-wrapper">
-                        <input type="text" @bind="userModel.Username" />
-                        <span class="icon-edit">✏️</span>
+                        <input type="text" @bind="userModel.Username" class="dark-input" />
+                        <svg class="input-icon" viewBox="0 0 24 24"><path d="M20.71,7.04C21.1,6.65 21.1,6 20.71,5.63L18.37,3.29C18,2.9 17.35,2.9 16.96,3.29L15.12,5.12L18.87,8.87M3,17.25V21H6.75L17.81,9.93L14.07,6.18L3,17.25Z" /></svg>
                     </div>
                 </div>
 
                 <div class="form-group">
                     <label>Password</label>
                     <div class="input-wrapper">
-                        <input type="password" @bind="userModel.Password" />
-                        <span class="icon-edit">✏️</span>
+                        <input type="password" @bind="userModel.Password" class="dark-input" />
+                        <svg class="input-icon" viewBox="0 0 24 24"><path d="M20.71,7.04C21.1,6.65 21.1,6 20.71,5.63L18.37,3.29C18,2.9 17.35,2.9 16.96,3.29L15.12,5.12L18.87,8.87M3,17.25V21H6.75L17.81,9.93L14.07,6.18L3,17.25Z" /></svg>
                     </div>
                 </div>
 
                 <div class="form-group">
                     <label>Birthday</label>
                     <div class="input-wrapper">
-                        <input type="date" @bind="userModel.Birthday" />
-                        <span class="icon-calendar">📅</span>
+                        <input type="date" @bind="userModel.Birthday" class="dark-input" />
+                        <svg class="input-icon" viewBox="0 0 24 24"><path d="M19,19H5V8H19M16,1V3H8V1H6V3H5C3.89,3 3,3.89 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V5C21,3.89 20.1,3 19,3H18V1M17,12H12V17H17V12Z" /></svg>
                     </div>
                 </div>
 
                 <div class="form-group">
                     <label>Language</label>
                     <div class="select-wrapper">
-                        <select @bind="userModel.Language">
+                        <select @bind="userModel.Language" class="dark-select">
                             <option value="English">English</option>
                             <option value="Spanish">Spanish</option>
                         </select>
                         <span class="select-arrow">▼</span>
                     </div>
                 </div>
-
             </div>
 
             <div class="preferences-column">
                 <div class="preferences-box">
 
                     <div class="preferences-header">
-                        <h2>Preferences</h2>
-                        <button class="btn-add" @onclick="AgregarPreferencia">＋</button>
+                        <h2>PREFERENCES</h2>
+                        <button class="btn-add" @onclick="AbrirModalPreferencia" title="Add preference">＋</button>
                     </div>
 
                     <div class="preferences-list">
@@ -88,25 +87,99 @@
 
                 <div class="settings-actions">
                     <button class="btn-action btn-themes" @onclick="ManejarTemas">
-                        <span class="btn-icon">🎨</span> Themes
+                        <svg class="btn-svg" viewBox="0 0 24 24"><path d="M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A1.5,1.5 0 0,0 13.5,20.5A1.5,1.5 0 0,0 13,19.4L13.1,19.3C13.3,19.1 13.6,19 14,19H16A5,5 0 0,0 21,14C21,9.24 16.96,5 12,5A1,1 0 0,0 11,6A1,1 0 0,0 12,7A3,3 0 0,1 15,10A1,1 0 0,0 16,11H17A2,2 0 0,1 19,13A2,2 0 0,1 17,15H14C12.34,15 11,13.66 11,12A4,4 0 0,1 15,8A1,1 0 0,0 15,6C15,4.34 13.66,3 12,3A8,8 0 0,0 4,11A8,8 0 0,0 12,19A1,1 0 0,0 13,18A1,1 0 0,0 12,17A6,6 0 0,1 6,11A6,6 0 0,1 12,5Z" /></svg>
+                        Themes
                     </button>
                     <button class="btn-action btn-logout" @onclick="ManejarLogout">
-                        <span class="btn-icon">🚪</span> Logout
+                        <svg class="btn-svg" viewBox="0 0 24 24"><path d="M16,17V14H9V10H16V7L21,12L16,17M14,2A2,2 0 0,1 16,4V6H14V4H5V20H14V18H16V20A2,2 0 0,1 14,22H5A2,2 0 0,1 3,20V4A2,2 0 0,1 5,2M14,10V14H11V10H14Z" /></svg>
+                        Logout
                     </button>
                 </div>
 
                 <button class="btn-action btn-apply" @onclick="GuardarCambios">
-                    <span class="btn-icon">💾</span> Apply Changes
+                    <svg class="btn-svg" viewBox="0 0 24 24"><path d="M15,9H5V5H15M12,19A3,3 0 0,1 9,16A3,3 0 0,1 12,13A3,3 0 0,1 15,16A3,3 0 0,1 12,19M17,3H5C3.89,3 3,3.9 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V7L17,3Z" /></svg>
+                    Apply Changes
                 </button>
             </div>
 
         </div>
     </div>
 
+    @if (isThemeModalOpen)
+    {
+        <div class="modal-overlay" @onclick="CerrarModal">
+            <div class="modal-card" @onclick:stopPropagation>
+                <div class="modal-header">
+                    <h3>SELECT THEME</h3>
+                    <button class="modal-close" @onclick="CerrarModal">✕</button>
+                </div>
+                <div class="modal-buttons-grid">
+                    <button class="theme-btn-option opt-light" @onclick='() => SeleccionarTema("light")'>Light</button>
+                    <button class="theme-btn-option opt-dark" @onclick='() => SeleccionarTema("dark")'>Dark</button>
+                    <button class="theme-btn-option opt-retro" @onclick='() => SeleccionarTema("retro")'>Retro</button>
+                    <button class="theme-btn-option opt-office" @onclick='() => SeleccionarTema("office")'>Office</button>
+                </div>
+            </div>
+        </div>
+    }
+
+    @if (isPrefModalOpen)
+    {
+        <div class="modal-overlay" @onclick="CerrarModalPreferencia">
+            <div class="modal-card" @onclick:stopPropagation>
+                <div class="modal-header">
+                    <h3>ADD PREFERENCE</h3>
+                    <button class="modal-close" @onclick="CerrarModalPreferencia">✕</button>
+                </div>
+
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label>What are you interested in?</label>
+                        <div class="input-wrapper">
+                            <input type="text"
+                                   @bind="newPreferenceInput"
+                                   @bind:event="oninput"
+                                   @onkeyup="HandlePrefKeyUp"
+                                   class="dark-input"
+                                   placeholder="e.g. Artificial Intelligence"
+                                   maxlength="30" />
+                        </div>
+                    </div>
+
+                    @if (!string.IsNullOrEmpty(validationMessage))
+                    {
+                        <div class="error-banner">
+                            <svg viewBox="0 0 24 24" class="error-icon-svg"><path d="M13 14H11V9H13M13 18H11V16H13M12 2A10 10 0 0 0 2 12A10 10 0 0 0 12 22A10 10 0 0 0 22 12A10 10 0 0 0 12 2Z" /></svg>
+                            <span>@validationMessage</span>
+                        </div>
+                    }
+                </div>
+
+                <div class="modal-footer">
+                    <button class="btn-action btn-apply" @onclick="GuardarPreferencia">
+                        Add Preference
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+
 </div>
 
 @code {
     private SettingsFields userModel = new();
+
+    // Estados de Modales e Inputs
+    private bool isThemeModalOpen = false;
+    private bool isPrefModalOpen = false;
+    private string newPreferenceInput = "";
+    private string validationMessage = "";
+
+    // Diccionario/Lista básica de insultos o palabras no permitidas (puedes ampliarla)
+    private readonly HashSet<string> blocklist = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "mierda", "puto", "puta", "carajo", "pelotudo", "boludo", "concha", "forro", "culiao"
+    };
 
     protected override void OnInitialized()
     {
@@ -117,54 +190,73 @@
         userModel.Language = "English";
 
         userModel.Preferences = new List<string> {
-            "Technology",
-            "Weather",
-            "Sports",
-            "Aeronautics",
-            "Prehistoric"
+            "Technology", "Weather", "Sports", "Aeronautics", "Prehistoric"
         };
     }
 
-    // Lógica para el botón de Apply Changes
-    private void GuardarCambios()
+    // Lógica del Modal de Temas
+    private void ManejarTemas() => isThemeModalOpen = true;
+    private void CerrarModal() => isThemeModalOpen = false;
+    private void SeleccionarTema(string tema)
     {
-        // Acá mapearías tu 'userModel' para actualizar tu tabla de usuarios
-        Console.WriteLine($"Cambios guardados con éxito para el usuario: {userModel.Username}");
+        ThemeState.SetTheme(tema);
+        isThemeModalOpen = false;
     }
 
-    private void AgregarPreferencia()
+    // Lógica del Nuevo Modal de Preferencias
+    private void AbrirModalPreferencia()
     {
-        userModel.Preferences.Add("New Interest");
+        newPreferenceInput = "";
+        validationMessage = "";
+        isPrefModalOpen = true;
     }
 
-    private void EliminarPreferencia(string target)
+    private void CerrarModalPreferencia() => isPrefModalOpen = false;
+
+    private void GuardarPreferencia()
     {
-        userModel.Preferences.Remove(target);
+        if (string.IsNullOrWhiteSpace(newPreferenceInput))
+        {
+            validationMessage = "The preference cannot be empty.";
+            return;
+        }
+
+        string cleanInput = newPreferenceInput.Trim();
+
+        // Verificamos si alguna palabra ingresada contiene o es un insulto de la blocklist
+        foreach (var badWord in blocklist)
+        {
+            if (cleanInput.Contains(badWord, StringComparison.OrdinalIgnoreCase))
+            {
+                validationMessage = "Explicit language or insults are not allowed.";
+                return;
+            }
+        }
+
+        // Si pasa el filtro, se agrega y se cierra el modal
+        userModel.Preferences.Add(cleanInput);
+        isPrefModalOpen = false;
     }
 
-    // Lógica para el botón de Temas
-    private void ManejarTemas()
+    // Permite guardar también al presionar Enter en el teclado
+    private void HandlePrefKeyUp(KeyboardEventArgs e)
     {
-        // Acá podés implementar un toggle de clases body o llamar a un JSInterop
-        Console.WriteLine("Cambiando el tema de la aplicación...");
+        if (e.Key == "Enter")
+        {
+            GuardarPreferencia();
+        }
     }
 
-    // Lógica para el botón de Logout
-    private void ManejarLogout()
-    {
-        // Acá limpiarías tokens de sesión / AuthenticationStateProvider
-        Console.WriteLine("Cerrando sesión del usuario...");
-    }
+    private void EliminarPreferencia(string target) => userModel.Preferences.Remove(target);
+    private void GuardarCambios() => Console.WriteLine("Cambios guardados.");
+    private void ManejarLogout() => Console.WriteLine("Cerrando sesión...");
 
     public class SettingsFields
     {
         public string Email { get; set; } = "";
         public string Username { get; set; } = "";
         public string Password { get; set; } = "";
-
-        // 2. Cambiado de string a DateTime
         public DateTime Birthday { get; set; }
-
         public string Language { get; set; } = "";
         public List<string> Preferences { get; set; } = new();
     }

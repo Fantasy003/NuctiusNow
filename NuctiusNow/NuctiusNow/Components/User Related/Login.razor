@@ -8,6 +8,7 @@
     <div class="login-card">
         <div class="login-header">
             <h1>LOGIN</h1>
+            <p class="login-subtitle">Welcome back to NuctiusNow portal</p>
         </div>
 
         <div class="login-body">
@@ -15,26 +16,26 @@
 
                 <div class="form-group">
                     <label for="username">Username</label>
-                    <input type="text" id="username" @bind-value="loginModel.Username" autocomplete="off" />
+                    <input type="text" id="username" @bind-value="loginModel.Username" autocomplete="off" placeholder="example" />
                 </div>
 
                 <div class="form-group">
                     <label for="password">Password</label>
-                    <input type="password" id="password" @bind-value="loginModel.Password" />
+                    <input type="password" id="password" @bind-value="loginModel.Password" placeholder="••••••••" />
                 </div>
 
                 <div class="form-checkbox">
                     <label class="checkbox-container">
                         <input type="checkbox" @bind="loginModel.RememberMe" />
                         <span class="custom-checkmark"></span>
-                        Remember my account info next time
+                        <span class="checkbox-label">Remember my account info next time</span>
                     </label>
                 </div>
 
-                <button type="submit" class="btn-go">GO</button>
+                <button type="submit" class="btn-go">Go</button>
 
                 <div class="register-redirect">
-                    Don't have an account? <NavLink href="register">Register here.</NavLink>
+                    Don't have an account? <NavLink href="register">Register here</NavLink>
                 </div>
             </EditForm>
         </div>

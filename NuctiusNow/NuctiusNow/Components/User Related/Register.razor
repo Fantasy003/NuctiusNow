@@ -9,54 +9,60 @@
     <div class="register-card">
         <div class="register-header">
             <h1>REGISTER</h1>
+            <p class="register-subtitle">Join NuctiusNow premium portal</p>
         </div>
 
         <div class="register-body">
             @if (!string.IsNullOrEmpty(errorMessage))
             {
-                <div class="error-alert">⚠️ @errorMessage</div>
+                <div class="error-alert">
+                    <span class="error-icon">⚠️</span>
+                    <span class="error-text">@errorMessage</span>
+                </div>
             }
 
             <EditForm Model="@registerModel" OnValidSubmit="HandleRegister">
 
                 <div class="form-group">
-                    <label for="email">Email</label>
-                    <input type="email" id="email" @bind-value="registerModel.Email" autocomplete="off" />
+                    <label for="email">Email Address</label>
+                    <input type="email" id="email" @bind-value="registerModel.Email" autocomplete="off" placeholder="name@example.com" />
                 </div>
 
                 <div class="form-group">
                     <label for="username">Username</label>
-                    <input type="text" id="username" @bind-value="registerModel.Username" autocomplete="off" />
+                    <input type="text" id="username" @bind-value="registerModel.Username" autocomplete="off" placeholder="example" />
                 </div>
 
                 <div class="form-group">
                     <label for="password">Password</label>
-                    <input type="password" id="password" @bind-value="registerModel.Password" @bind-value:event="oninput" />
-                    
+                    <input type="password" id="password" @bind-value="registerModel.Password" @bind-value:event="oninput" placeholder="••••••••" />
+
                     @if (!string.IsNullOrEmpty(registerModel.Password))
                     {
                         <div class="strength-meter-wrapper">
-                            <div class="strength-bar" style="width: @(passwordStrengthScore * 25)%; background-color: @StrengthBarColor;"></div>
+                            <div class="strength-bar-container">
+                                <div class="strength-bar" style="width: @(passwordStrengthScore * 25)%; background-color: @StrengthBarColor;"></div>
+                            </div>
                             <span class="strength-text" style="color: @StrengthBarColor;">Strength: @passwordStrengthLabel</span>
                         </div>
                     }
                 </div>
 
                 <div class="form-group">
-                    <label for="re-password">Re-enter password</label>
-                    <input type="password" id="re-password" @bind-value="registerModel.ConfirmPassword" />
+                    <label for="re-password">Confirm Password</label>
+                    <input type="password" id="re-password" @bind-value="registerModel.ConfirmPassword" placeholder="••••••••" />
                 </div>
 
                 <div class="captcha-v3-disclaimer">
-                    This site is protected by reCAPTCHA and the Google 
+                    This site is protected by reCAPTCHA and the Google
                     <a href="https://policies.google.com/privacy" target="_blank">Privacy Policy</a> and
                     <a href="https://policies.google.com/terms" target="_blank">Terms of Service</a> apply.
                 </div>
 
-                <button type="submit" class="btn-create">CREATE</button>
+                <button type="submit" class="btn-create">Create Account</button>
 
                 <div class="login-redirect">
-                    Already have an account? <NavLink href="login">Login here.</NavLink>
+                    Already have an account? <NavLink href="login">Login here</NavLink>
                 </div>
 
             </EditForm>
@@ -68,11 +74,9 @@
 @code {
     private RegisterFields registerModel = new();
     private string errorMessage = string.Empty;
-    
-    // Configuración de reCAPTCHA (Reemplazá con tu Site Key real de Google)
+
     private const string RecaptchaSiteKey = "6Le87EMtAAAAADDzoh70r-IgORbWTvdLvRCfb3vT";
 
-    // Propiedades calculadas para el medidor de contraseña
     private int passwordStrengthScore => CalculatePasswordStrength(registerModel.Password);
     private string passwordStrengthLabel => GetStrengthLabel(passwordStrengthScore);
     private string StrengthBarColor => GetStrengthColor(passwordStrengthScore);
@@ -81,21 +85,18 @@
     {
         errorMessage = string.Empty;
 
-        // 1. Validación de Email (Debe contener '@')
         if (string.IsNullOrWhiteSpace(registerModel.Email) || !registerModel.Email.Contains("@"))
         {
             errorMessage = "The email address must contain an '@'.";
             return;
         }
 
-        // 2. Validación de longitud de contraseña
         if (string.IsNullOrWhiteSpace(registerModel.Password) || registerModel.Password.Length < 8)
         {
             errorMessage = "The password must be at least 8 characters long.";
             return;
         }
 
-        // 3. Validación de coincidencia de contraseñas
         if (registerModel.Password != registerModel.ConfirmPassword)
         {
             errorMessage = "Passwords do not match.";
@@ -104,8 +105,6 @@
 
         try
         {
-            // 4. Llamada a reCAPTCHA v3 mediante JavaScript
-            // Le pasamos tu clave pública y la acción "register"
             string recaptchaToken = await JS.InvokeAsync<string>("executeRecaptchaV3", RecaptchaSiteKey, "register");
 
             if (string.IsNullOrEmpty(recaptchaToken))
@@ -114,10 +113,6 @@
                 return;
             }
 
-            // --- PASO POSTERIOR ---
-            // Acá mandarías 'recaptchaToken' a tu backend (.NET Web API o servicio interno)
-            // para validarlo contra el endpoint de Google usando tu Secret Key.
-            
             Console.WriteLine($"Token de reCAPTCHA obtenido: {recaptchaToken.Substring(0, 10)}...");
             Console.WriteLine($"Usuario registrado con éxito: {registerModel.Email}");
         }
@@ -128,26 +123,15 @@
         }
     }
 
-    // Lógica para medir la fuerza de la contraseña
     private int CalculatePasswordStrength(string password)
     {
         if (string.IsNullOrEmpty(password)) return 0;
-        
         int score = 0;
-
-        // Criterio 1: Longitud mínima de 8 caracteres
         if (password.Length >= 8) score++;
-
-        // Criterio 2: Contiene números
         if (password.Any(char.IsDigit)) score++;
-
-        // Criterio 3: Contiene mayúsculas y minúsculas mezcladas
         if (password.Any(char.IsUpper) && password.Any(char.IsLower)) score++;
-
-        // Criterio 4: Contiene caracteres especiales
         if (password.Any(ch => !char.IsLetterOrDigit(ch))) score++;
-
-        return score; // Devuelve un valor de 0 a 4
+        return score;
     }
 
     private string GetStrengthLabel(int score) => score switch
@@ -161,11 +145,11 @@
 
     private string GetStrengthColor(int score) => score switch
     {
-        1 => "#ef4444", // Rojo
-        2 => "#f59e0b", // Amarillo/Naranja
-        3 => "#3b82f6", // Azul
-        4 => "#22c55e", // Verde
-        _ => "#9ca3af"  // Gris
+        1 => "#ef4444",
+        2 => "#f59e0b",
+        3 => "#3b82f6",
+        4 => "#22c55e",
+        _ => "#9ca3af"
     };
 
     public class RegisterFields

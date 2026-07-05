@@ -4,6 +4,9 @@ using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Agregá esta línea en tu Program.cs
+builder.Services.AddScoped<ThemeState>();
+
 // ======================================================================
 // 1. SECCIÓN DE SERVICIOS
 // ======================================================================

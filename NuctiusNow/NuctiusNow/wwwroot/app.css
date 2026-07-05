@@ -49,3 +49,44 @@ h1:focus {
 .darker-border-checkbox.form-check-input {
     border-color: #929292;
 }
+
+/* Pegar esto en app.css o site.css */
+.theme-dark {
+    --bg-main: #111112;
+    --bg-card: #1e1e24;
+    --bg-input: #151518;
+    --border-color: #2d2d34;
+    --text-main: #ffffff;
+    --text-muted: #94a3b8;
+    --accent-color: #3b82f6;
+}
+
+.theme-light {
+    --bg-main: #ffffff;
+    --bg-card: #f8fafc;
+    --bg-input: #ffffff;
+    --border-color: #e2e8f0;
+    --text-main: #0f172a;
+    --text-muted: #64748b;
+    --accent-color: #2563eb;
+}
+
+.theme-retro {
+    --bg-main: #ff0055;
+    --bg-card: #00ffaa;
+    --bg-input: #ffff00;
+    --border-color: #ff00ff;
+    --text-main: #111112;
+    --text-muted: #4d004d;
+    --accent-color: #7000ff;
+}
+
+.theme-office {
+    --bg-main: #0f172a;
+    --bg-card: #1e3a8a;
+    --bg-input: #1e40af;
+    --border-color: #3b82f6;
+    --text-main: #ffffff;
+    --text-muted: #93c5fd;
+    --accent-color: #60a5fa;
+}

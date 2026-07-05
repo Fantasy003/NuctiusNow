@@ -1,34 +1,43 @@
 ﻿/* =======================================================
-   CONTENEDOR PRINCIPAL DARK Y CONFIGURACIÓN BASE
+   CONTENEDOR PRINCIPAL: ROMPE EL LAYOUT Y SE CLAVA A LA PANTALLA
    ======================================================= */
 .home-page-container {
-    background-color: #111112; /* Gris ultra oscuro de tu paleta real */
+    position: fixed; /* Ignora contenedores y márgenes externos del MainLayout */
+    top: 0;
+    left: 0;
+    width: 100vw; /* Ocupa el 100% real del ancho del navegador */
+    height: 100vh; /* Ocupa el 100% real del alto del navegador */
+    background-color: #111112; /* Gris ultra oscuro de base */
     color: #ffffff;
-    min-height: 100vh;
-    padding: 3rem 2rem 14rem 2rem; /* Espacio prudencial abajo para el despliegue del menú */
+    padding: 1.5rem 1.5rem 6rem 1.5rem; /* Espacio inferior reservado para el menú flotante */
     display: flex;
     flex-direction: column;
     align-items: center;
-    font-family: Arial, Helvetica, sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
     box-sizing: border-box;
+    overflow: hidden; /* Elimina barras de scroll rebeldes */
+    z-index: 10; /* Asegura superponerse a cualquier fondo previo */
 }
 
 .home-wrapper {
     position: relative;
     width: 100%;
-    max-width: 1250px;
+    height: 100%;
 }
 
 /* =======================================================
-   GRID DE CATEGORÍAS (3x3 - Inspirado fielmente en la captura)
+   GRID DE CATEGORÍAS (Malla elástica total)
    ======================================================= */
 .categories-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
-    gap: 1.5rem;
+    grid-template-rows: repeat(3, 1fr); /* Divide el alto disponible en 3 filas perfectas */
+    gap: 1.25rem; /* Separación fluida entre celdas */
+    width: 100%;
+    height: 100%;
 }
 
-/* Limpieza absoluta de estilos de enlace */
+/* Forzar a los enlaces a estirarse por completo en su celda */
 .category-card-link,
 .category-card-link:hover,
 .category-card-link:focus,
@@ -36,21 +45,24 @@
     text-decoration: none !important;
     color: inherit !important;
     display: block;
+    width: 100%;
+    height: 100%;
 }
 
-/* Tarjetas con imagen de fondo */
+/* Tarjetas 100% elásticas con imagen de fondo */
 .category-card {
     position: relative;
-    height: 220px;
+    width: 100%;
+    height: 100%;
     background-size: cover;
     background-position: center;
     background-repeat: no-repeat;
-    border-radius: 24px; /* Bordes redondeados elegantes */
+    border-radius: 20px; /* Esquinas suavizadas premium */
     overflow: hidden;
     display: flex;
     justify-content: center;
     align-items: center;
-    border: 1px solid #1f2023;
+    border: 1px solid rgba(255, 255, 255, 0.05);
     transition: transform 0.3s cubic-bezier(0.25, 1, 0.5, 1), border-color 0.3s ease;
     cursor: pointer;
 }
@@ -71,7 +83,7 @@
 .category-title {
     position: relative;
     z-index: 2;
-    font-family: "Times New Roman", Times, serif; /* Estilo clásico/formal como la captura */
+    font-family: "Times New Roman", Times, serif; /* Estilo clásico/formal */
     font-size: 1.4rem;
     font-weight: bold;
     letter-spacing: 2px;
@@ -82,15 +94,15 @@
 }
 
 /* =======================================================
-   COMPORTAMIENTO INTERACTIVO HOVER (Sutil y Premium)
+   COMPORTAMIENTO INTERACTIVO HOVER
    ======================================================= */
 .category-card-link:hover .category-card {
-    transform: scale(1.03);
-    border-color: #3b82f6; /* Destello reactivo azul opcional */
+    transform: scale(1.02);
+    border-color: #3b82f6; /* Sutil destello azul reactivo */
 }
 
 .category-card-link:hover .card-overlay {
-    background-color: rgba(0, 0, 0, 0.45); /* Aclara sutilmente la imagen al enfocar */
+    background-color: rgba(0, 0, 0, 0.45); /* Aclara la imagen al enfocar */
 }
 
 .category-card-link:hover .category-title {
@@ -105,7 +117,7 @@
     bottom: 0;
     left: 50%;
     transform: translateX(-50%) translateY(calc(100% - 42px));
-    z-index: 100;
+    z-index: 100; /* Siempre por encima del grid absoluto */
     transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
@@ -217,21 +229,19 @@
     }
 
 /* =======================================================
-   RESPONSIVE DESIGN (MOBILE)
+   RESPONSIVE DESIGN (Reorganización de filas dinámicas)
    ======================================================= */
 @media (max-width: 900px) {
     .categories-grid {
         grid-template-columns: repeat(2, 1fr);
+        grid-template-rows: repeat(5, 1fr); /* Redistribuye el alto para mantener la pantalla llena */
     }
 }
 
 @media (max-width: 600px) {
     .categories-grid {
         grid-template-columns: 1fr;
-    }
-
-    .category-card {
-        height: 180px;
+        grid-template-rows: repeat(9, 1fr); /* 9 filas exactas para cubrir el alto mobile al 100% */
     }
 
     .floating-menu-card {

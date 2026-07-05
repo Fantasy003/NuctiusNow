@@ -1,82 +1,112 @@
-﻿/* Contenedor principal con fondo abstracto simulado */
+﻿/* =======================================================
+   CONTENEDOR PRINCIPAL CON IMAGEN Y FILTRO PROFESIONAL
+   ======================================================= */
 .login-page-container {
     min-height: 100vh;
     width: 100%;
     display: flex;
     justify-content: center;
     align-items: center;
-    font-family: 'Georgia', 'Times New Roman', serif; /* Tipografía sutilmente clásica como la imagen */
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     margin: 0;
-    padding: 1rem;
+    padding: 3rem 1rem;
     box-sizing: border-box;
-    /* Simulación del fondo con ondas de la imagen usando gradientes múltiples */
-    background: radial-gradient(ellipse at top, #364968 15%, transparent 60%), radial-gradient(ellipse at bottom, #364968 15%, transparent 60%), #d1cfca;
+    background-color: #0c0d0e;
+    /* Mismo gradiente e imagen de fondo para consistencia total */
+    background-image: linear-gradient(135deg, rgba(10, 11, 14, 0.8) 0%, rgba(19, 28, 41, 0.8) 100%), url('/Background/bgLoginJP.jpeg');
     background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-attachment: fixed;
 }
 
-/* Tarjeta Gris Central */
+/* =======================================================
+   TARJETA MODERNA CON EFECTO GLASSMORPHISM
+   ======================================================= */
 .login-card {
-    background-color: #9da1a6; /* Gris medio de la imagen */
+    background-color: rgba(24, 25, 27, 0.85); /* Fondo oscuro translúcido */
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
     width: 100%;
-    max-width: 480px;
-    border-radius: 24px; /* Esquinas bien suavizadas */
+    max-width: 440px;
+    border-radius: 20px;
+    border: 1px solid rgba(255, 255, 255, 0.08); /* Borde sutil brillante */
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
     overflow: hidden;
-    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
 }
 
-/* Cabecera Azul/Grisácea */
 .login-header {
-    background-color: #5c667a; /* Color exacto de la barra superior */
-    padding: 1.2rem;
+    padding: 2.5rem 2rem 1rem 2rem;
     text-align: center;
-    border-bottom: 1px solid rgba(0, 0, 0, 0.1);
 }
 
     .login-header h1 {
         color: #ffffff;
         margin: 0;
-        font-size: 2.2rem;
-        font-weight: bold;
-        letter-spacing: 2px;
+        font-size: 2rem;
+        font-weight: 800;
+        letter-spacing: 1.5px;
+        text-transform: uppercase;
     }
 
-/* Contenido del Formulario */
-.login-body {
-    padding: 2.5rem 3rem;
+.login-subtitle {
+    color: #88888d;
+    font-size: 0.9rem;
+    margin-top: 0.4rem;
+    margin-bottom: 0;
 }
 
-/* Grupos de Inputs */
+.login-body {
+    padding: 1rem 2.5rem 2.5rem 2.5rem;
+}
+
+/* =======================================================
+   INPUTS ESTILO DARK PREMIUM
+   ======================================================= */
 .form-group {
-    margin-bottom: 1.8rem;
+    margin-bottom: 1.25rem;
     display: flex;
     flex-direction: column;
 }
 
     .form-group label {
-        color: #1a1a1a;
-        font-size: 0.95rem;
+        color: #cbd5e1;
+        font-size: 0.85rem;
         margin-bottom: 0.4rem;
-        font-weight: 500;
-        padding-left: 0.5rem;
+        font-weight: 600;
+        letter-spacing: 0.3px;
+        padding-left: 0.2rem;
     }
 
     .form-group input {
-        background-color: #ffffff;
-        border: none;
+        background-color: #202124;
+        border: 1px solid #2d2e31;
         outline: none;
         padding: 0.75rem 1.2rem;
-        font-size: 1.1rem;
-        border-radius: 50px; /* Inputs con forma de cápsula idénticos a la foto */
-        color: #333333;
-        box-shadow: inset 0 2px 4px rgba(0,0,0,0.05);
+        font-size: 0.95rem;
+        border-radius: 10px; /* Bordes suavizados modernos */
+        color: #ffffff;
         width: 100%;
         box-sizing: border-box;
+        transition: all 0.2s ease;
     }
 
-/* Checkbox Personalizado (Círculo Blanco) */
+        .form-group input:focus {
+            border-color: #3b82f6;
+            background-color: #18191b;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+        }
+
+        .form-group input::placeholder {
+            color: #55555a;
+        }
+
+/* =======================================================
+   CHECKBOX PERSONALIZADO REFINADO
+   ======================================================= */
 .form-checkbox {
-    margin-bottom: 2rem;
-    padding-left: 0.2rem;
+    margin-bottom: 1.5rem;
+    margin-top: 0.5rem;
 }
 
 .checkbox-container {
@@ -84,13 +114,10 @@
     align-items: center;
     position: relative;
     cursor: pointer;
-    font-size: 0.88rem;
-    color: #1a1a1a;
     user-select: none;
     gap: 0.6rem;
 }
 
-    /* Escondemos el checkbox nativo cuadrado */
     .checkbox-container input {
         position: absolute;
         opacity: 0;
@@ -99,61 +126,94 @@
         width: 0;
     }
 
-/* Creamos el círculo blanco de la imagen */
+/* Reemplazo del círculo por un diseño cuadrado redondeado premium */
 .custom-checkmark {
     height: 18px;
     width: 18px;
-    background-color: #ffffff;
-    border-radius: 50%; /* Redondo */
+    background-color: #202124;
+    border: 1px solid #2d2e31;
+    border-radius: 4px;
     display: inline-block;
-    transition: background-color 0.2s;
+    position: relative;
+    transition: all 0.2s ease;
 }
 
-/* Comportamiento visual al seleccionarlo (opcional, le da feedback al usuario) */
+.checkbox-label {
+    color: #94a3b8;
+    font-size: 0.85rem;
+    font-weight: 500;
+}
+
+/* Estado del checkbox seleccionado (azul premium con tilde blanco) */
 .checkbox-container input:checked ~ .custom-checkmark {
-    background-color: #ffd466; /* Se pinta del color del botón al activarse */
-    box-shadow: inset 0 0 0 4px #ffffff;
+    background-color: #3b82f6;
+    border-color: #3b82f6;
 }
 
-/* Botón Amarillo GO */
+    .checkbox-container input:checked ~ .custom-checkmark:after {
+        content: "";
+        position: absolute;
+        left: 5px;
+        top: 2px;
+        width: 4px;
+        height: 8px;
+        border: solid white;
+        border-width: 0 2px 2px 0;
+        transform: rotate(45deg);
+    }
+
+.checkbox-container:hover input ~ .custom-checkmark {
+    border-color: #3b82f6;
+}
+
+/* =======================================================
+   BOTÓN DE ACCIÓN PRINCIPAL (GO)
+   ======================================================= */
 .btn-go {
-    background-color: #ffd466; /* Amarillo característico */
-    color: #000000;
+    background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+    color: #ffffff;
     border: none;
     outline: none;
     width: 100%;
-    padding: 0.8rem;
-    font-size: 1.5rem;
-    font-weight: bold;
-    border-radius: 50px; /* Botón cápsula */
+    padding: 0.85rem;
+    font-size: 1rem;
+    font-weight: 700;
+    border-radius: 10px;
     cursor: pointer;
-    letter-spacing: 1px;
-    transition: background-color 0.2s, transform 0.1s;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    transition: all 0.2s ease;
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
 }
 
     .btn-go:hover {
-        background-color: #fcc344;
+        filter: brightness(1.1);
+        box-shadow: 0 6px 16px rgba(59, 130, 246, 0.4);
+        transform: translateY(-1px);
     }
 
     .btn-go:active {
-        transform: scale(0.99);
+        transform: translateY(1px);
     }
 
+/* =======================================================
+   REDIRECCIÓN
+   ======================================================= */
 .register-redirect {
     text-align: center;
-    margin-top: 1.5rem; /* Le da aire respecto al botón GO */
-    font-size: 0.9rem;
-    color: #1a1a1a; /* Mismo tono oscuro de los labels */
+    margin-top: 1.5rem;
+    font-size: 0.85rem;
+    color: #94a3b8;
 }
 
     .register-redirect a {
-        color: #1d4ed8; /* Un azul sutil para el hipervínculo */
-        text-decoration: underline;
+        color: #3b82f6;
+        text-decoration: none;
         font-weight: 600;
-        transition: color 0.2s ease;
+        transition: color 0.15s ease;
     }
 
         .register-redirect a:hover {
-            color: #ffcc00; /* Cambia a un tono amarillo/dorado al pasar el mouse */
+            color: #60a5fa;
+            text-decoration: underline;
         }

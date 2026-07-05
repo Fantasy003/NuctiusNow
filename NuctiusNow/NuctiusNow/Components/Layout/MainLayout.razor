@@ -1,7 +1,30 @@
 ﻿@inherits LayoutComponentBase
+@inject ThemeState ThemeState
+@implements IDisposable
 
-<div class="page min-h-screen bg-gray-100 font-sans flex flex-col">
-    <main class="flex-1 p-6 max-w-7xl w-full mx-auto">
-        @Body
+<!-- Envolvemos todo el layout con la variable dinámica -->
+<div class="theme-@ThemeState.CurrentTheme" style="min-height: 100vh; background-color: var(--bg-main); color: var(--text-main); transition: background-color 0.3s ease;">
+
+    <main>
+        <!-- Tu menú de navegación o headers van acá -->
+
+        <article class="content">
+            @Body
+        </article>
     </main>
+
 </div>
+
+@code {
+    protected override void OnInitialized()
+    {
+        // Nos suscribimos a los cambios de tema
+        ThemeState.OnChange += StateHasChanged;
+    }
+
+    public void Dispose()
+    {
+        // Nos desuscribimos para evitar memory leaks
+        ThemeState.OnChange -= StateHasChanged;
+    }
+}
