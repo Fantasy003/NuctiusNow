@@ -1,6 +1,9 @@
 ﻿@page "/register"
 @rendermode InteractiveServer
 @inject IJSRuntime JS
+@inject AuthService authService
+@inject NavigationManager Navigation
+@inject Microsoft.Extensions.Configuration.IConfiguration Configuration
 
 <PageTitle>Register - NuctiusNow</PageTitle>
 
@@ -21,51 +24,82 @@
                 </div>
             }
 
-            <EditForm Model="@registerModel" OnValidSubmit="HandleRegister">
+            @if (!showPreferences)
+            {
+                <EditForm Model="@registerModel" OnValidSubmit="HandleRegister">
 
-                <div class="form-group">
-                    <label for="email">Email Address</label>
-                    <input type="email" id="email" @bind-value="registerModel.Email" autocomplete="off" placeholder="name@example.com" />
-                </div>
+                    <div class="form-group">
+                        <label for="email">Email Address</label>
+                        <input type="email" id="email" @bind-value="registerModel.Email" autocomplete="off" placeholder="name@example.com" />
+                    </div>
 
-                <div class="form-group">
-                    <label for="username">Username</label>
-                    <input type="text" id="username" @bind-value="registerModel.Username" autocomplete="off" placeholder="example" />
-                </div>
+                    <div class="form-group">
+                        <label for="username">Username</label>
+                        <input type="text" id="username" @bind-value="registerModel.Username" autocomplete="off" placeholder="example" />
+                    </div>
 
-                <div class="form-group">
-                    <label for="password">Password</label>
-                    <input type="password" id="password" @bind-value="registerModel.Password" @bind-value:event="oninput" placeholder="••••••••" />
+                    <div class="form-group">
+                        <label for="password">Password</label>
+                        <input type="password" id="password" @bind-value="registerModel.Password" @bind-value:event="oninput" placeholder="••••••••" />
 
-                    @if (!string.IsNullOrEmpty(registerModel.Password))
-                    {
-                        <div class="strength-meter-wrapper">
-                            <div class="strength-bar-container">
-                                <div class="strength-bar" style="width: @(passwordStrengthScore * 25)%; background-color: @StrengthBarColor;"></div>
+                        @if (!string.IsNullOrEmpty(registerModel.Password))
+                        {
+                            <div class="strength-meter-wrapper">
+                                <div class="strength-bar-container">
+                                    <div class="strength-bar" style="width: @(passwordStrengthScore * 25)%; background-color: @StrengthBarColor;"></div>
+                                </div>
+                                <span class="strength-text" style="color: @StrengthBarColor;">Strength: @passwordStrengthLabel</span>
                             </div>
-                            <span class="strength-text" style="color: @StrengthBarColor;">Strength: @passwordStrengthLabel</span>
-                        </div>
-                    }
+                        }
+                    </div>
+
+                    <div class="form-group">
+                        <label for="re-password">Confirm Password</label>
+                        <input type="password" id="re-password" @bind-value="registerModel.ConfirmPassword" placeholder="••••••••" />
+                    </div>
+
+                    <div class="form-group">
+                        <label>Security Check</label>
+                        <div id="register-recaptcha-container"></div>
+                    </div>
+
+                    <div class="captcha-v3-disclaimer">
+                        This site is protected by reCAPTCHA and the Google
+                        <a href="https://policies.google.com/privacy" target="_blank">Privacy Policy</a> and
+                        <a href="https://policies.google.com/terms" target="_blank">Terms of Service</a> apply.
+                    </div>
+
+                    <button type="submit" class="btn-create">Create Account</button>
+
+                    <div class="login-redirect">
+                        Already have an account? <NavLink href="login">Login here</NavLink>
+                    </div>
+
+                </EditForm>
+            }
+            else
+            {
+                <div class="preferences-setup">
+                    <h3>Select your preferences</h3>
+                    <p>Add topics you're interested in so we can personalize your feed.</p>
+
+                    <div class="pref-input-row">
+                        <input type="text" @bind="newPrefInput" placeholder="e.g. Technology" />
+                        <button class="btn-add" @onclick="AddPreference">Add</button>
+                    </div>
+
+                    <div class="pref-list">
+                        @foreach (var p in preferences)
+                        {
+                            <span class="pref-chip">@p <button class="chip-remove" @onclick="() => RemovePreference(p)">✕</button></span>
+                        }
+                    </div>
+
+                    <div class="pref-actions">
+                        <button class="btn-create" @onclick="SavePreferencesAsync">Save Preferences & Continue</button>
+                    </div>
                 </div>
-
-                <div class="form-group">
-                    <label for="re-password">Confirm Password</label>
-                    <input type="password" id="re-password" @bind-value="registerModel.ConfirmPassword" placeholder="••••••••" />
-                </div>
-
-                <div class="captcha-v3-disclaimer">
-                    This site is protected by reCAPTCHA and the Google
-                    <a href="https://policies.google.com/privacy" target="_blank">Privacy Policy</a> and
-                    <a href="https://policies.google.com/terms" target="_blank">Terms of Service</a> apply.
-                </div>
-
-                <button type="submit" class="btn-create">Create Account</button>
-
-                <div class="login-redirect">
-                    Already have an account? <NavLink href="login">Login here</NavLink>
-                </div>
-
-            </EditForm>
+            }
         </div>
     </div>
 
@@ -75,11 +109,32 @@
     private RegisterFields registerModel = new();
     private string errorMessage = string.Empty;
 
-    private const string RecaptchaSiteKey = "6Le87EMtAAAAADDzoh70r-IgORbWTvdLvRCfb3vT";
+    private string RecaptchaSiteKey => Configuration["Recaptcha:SiteKey"] ?? string.Empty;
+
+    // Registration -> Preferences flow state
+    private bool showPreferences = false;
+    private int? createdUserId = null;
+    private List<string> preferences = new();
+    private string newPrefInput = string.Empty;
 
     private int passwordStrengthScore => CalculatePasswordStrength(registerModel.Password);
     private string passwordStrengthLabel => GetStrengthLabel(passwordStrengthScore);
     private string StrengthBarColor => GetStrengthColor(passwordStrengthScore);
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !string.IsNullOrWhiteSpace(RecaptchaSiteKey))
+        {
+            try
+            {
+                await JS.InvokeVoidAsync("renderRecaptchaCheckbox", "register-recaptcha-container", RecaptchaSiteKey);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"reCAPTCHA render error: {ex.Message}");
+            }
+        }
+    }
 
     private async Task HandleRegister()
     {
@@ -105,22 +160,68 @@
 
         try
         {
-            string recaptchaToken = await JS.InvokeAsync<string>("executeRecaptchaV3", RecaptchaSiteKey, "register");
+            string recaptchaToken = await JS.InvokeAsync<string>("getRecaptchaToken");
 
             if (string.IsNullOrEmpty(recaptchaToken))
             {
-                errorMessage = "Captcha verification failed. Please try again.";
+                errorMessage = "Please complete the captcha to create an account.";
+                await JS.InvokeVoidAsync("resetRecaptchaCheckbox");
                 return;
             }
 
-            Console.WriteLine($"Token de reCAPTCHA obtenido: {recaptchaToken.Substring(0, 10)}...");
-            Console.WriteLine($"Usuario registrado con éxito: {registerModel.Email}");
+            var user = new User { Email = registerModel.Email, Username = registerModel.Username };
+            var result = await authService.RegistrarConCaptchaAsync(user, registerModel.Password, recaptchaToken);
+            if (!result.success)
+            {
+                errorMessage = result.message;
+                await JS.InvokeVoidAsync("resetRecaptchaCheckbox");
+                return;
+            }
+
+            createdUserId = result.userId;
+            showPreferences = true;
         }
         catch (Exception ex)
         {
             errorMessage = "Error validating Security Captcha. Make sure the script is loaded.";
             Console.WriteLine(ex.Message);
         }
+    }
+
+    private void AddPreference()
+    {
+        var clean = (newPrefInput ?? string.Empty).Trim();
+        if (string.IsNullOrEmpty(clean)) return;
+        if (!preferences.Contains(clean, StringComparer.OrdinalIgnoreCase))
+        {
+            preferences.Add(clean);
+        }
+        newPrefInput = string.Empty;
+    }
+
+    private void RemovePreference(string p)
+    {
+        preferences.Remove(p);
+    }
+
+    private async Task SavePreferencesAsync()
+    {
+        errorMessage = string.Empty;
+        if (!createdUserId.HasValue)
+        {
+            errorMessage = "User session missing. Please register again.";
+            return;
+        }
+
+        var result = await authService.SavePreferencesForUserAsync(createdUserId.Value, preferences);
+        if (!result.success)
+        {
+            errorMessage = result.message;
+            return;
+        }
+
+        // On success, navigate to main page
+        Navigation.NavigateTo("/");
     }
 
     private int CalculatePasswordStrength(string password)

@@ -1,5 +1,7 @@
 ﻿@page "/just-for-you"
 @rendermode InteractiveServer
+@inject UserSessionService sessionService
+@inject NavigationManager Navigation
 
 <PageTitle>Just For You - NuctiusNow</PageTitle>
 
@@ -83,8 +85,17 @@
     private bool isPremium = true;
     private List<JfyItem> NoticiasPersonalizadas = new();
 
-    protected override void OnInitialized()
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (!firstRender) return;
+
+        await sessionService.InitializeAsync();
+        if (!sessionService.IsAuthenticated)
+        {
+            Navigation.NavigateTo("/login", true);
+            return;
+        }
+
         GenerarNoticiasJFY();
     }
 

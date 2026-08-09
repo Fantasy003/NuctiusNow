@@ -1,18 +1,8 @@
 ﻿using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Design;
+using NuctiusNow.Components.User_Related; // Importá el namespace de tus entidades
 
-public class DesignTimeDbContextFactory : IDesignTimeDbContextFactory<ApplicationDbContext>
-{
-    public ApplicationDbContext CreateDbContext(string[] args)
-    {
-        var optionsBuilder = new DbContextOptionsBuilder<ApplicationDbContext>();
+namespace NuctiusNow.Data;
 
-        // Colocá acá tu cadena de conexión real a PostgreSQL
-        optionsBuilder.UseNpgsql("Host=localhost;Port=5432;Database=nuctiusnow;Username=postgres;Password=admin");
-
-        return new ApplicationDbContext(optionsBuilder.Options);
-    }
-}
 public class ApplicationDbContext : DbContext
 {
     public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
@@ -20,17 +10,14 @@ public class ApplicationDbContext : DbContext
     {
     }
 
-    // Tu tabla de noticias
-    public DbSet<NoticiaEntity> Noticias { get; set; }
-}
+    // Tablas Principales
+    public DbSet<User> Users { get; set; }
+    public DbSet<Tag> Tags { get; set; }
+    public DbSet<DetailNews> DetailNews { get; set; }
+    public DbSet<News> News { get; set; }
+    public DbSet<Preference> Preferences { get; set; }
 
-// El modelo que representará la tabla en Postgres
-public class NoticiaEntity
-{
-    public string Id { get; set; } // Postgres lo tomará como Clave Primaria (text)
-    public string Titulo { get; set; }
-    public string CuerpoHtml { get; set; }
-    public string ImagenUrl { get; set; }
-    public string Categoria { get; set; }
-    public DateTime Fecha { get; set; } = DateTime.UtcNow; // Postgres prefiere UTC para DateTime
+    // Tablas Intermedias / Relaciones
+    public DbSet<UserPreference> UserPreferences { get; set; }
+    public DbSet<UserNews> UserNews { get; set; }
 }

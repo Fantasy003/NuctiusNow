@@ -1,5 +1,7 @@
 ﻿@page "/noticia-detalle/{Id:int}"
 @rendermode InteractiveServer
+@inject UserSessionService sessionService
+@inject NavigationManager Navigation
 
 <PageTitle>Detalle de la Noticia - NuctiusNow</PageTitle>
 
@@ -63,8 +65,17 @@
     private bool hasLiked = false;
     private bool hasDisliked = false;
 
-    protected override void OnInitialized()
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (!firstRender) return;
+
+        await sessionService.InitializeAsync();
+        if (!sessionService.IsAuthenticated)
+        {
+            Navigation.NavigateTo("/login", true);
+            return;
+        }
+
         if (Id == 1) { Categoria = "Technology"; Titulo = "NVIDIA: SPARK PROCESSOR"; UrlImagen = "https://picsum.photos/id/0/400/300"; }
         else if (Id == 2) { Categoria = "Sports"; Titulo = "WORLD CUP: URUGUAY ELIMINATED"; UrlImagen = "https://picsum.photos/id/73/400/300"; }
         else if (Id == 3) { Categoria = "Weather"; Titulo = "ARGENTINA: RAINING ON MONDAY"; UrlImagen = "https://picsum.photos/id/401/400/300"; }

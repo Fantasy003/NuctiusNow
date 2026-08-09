@@ -1,6 +1,10 @@
 ﻿@page "/user-settings"
 @rendermode InteractiveServer
 @inject ThemeState ThemeState
+@inject AuthService authService
+@inject IJSRuntime JSRuntime
+@inject UserSessionService sessionService
+@inject NavigationManager Navigation
 
 <PageTitle>User Settings - NuctiusNow</PageTitle>
 
@@ -18,54 +22,59 @@
 
         <h1 class="main-title">USER SETTINGS</h1>
 
-        <div class="settings-grid">
+        @if (!string.IsNullOrEmpty(saveMessage))
+        {
+            <div class="status-alert">
+                @saveMessage
+            </div>
+        }
 
-            <div class="profile-column">
-                <div class="form-group">
-                    <label>Email Address</label>
-                    <div class="input-wrapper">
-                        <input type="email" @bind="userModel.Email" class="dark-input" />
-                        <svg class="input-icon" viewBox="0 0 24 24"><path d="M20.71,7.04C21.1,6.65 21.1,6 20.71,5.63L18.37,3.29C18,2.9 17.35,2.9 16.96,3.29L15.12,5.12L18.87,8.87M3,17.25V21H6.75L17.81,9.93L14.07,6.18L3,17.25Z" /></svg>
-                    </div>
-                </div>
-
-                <div class="form-group">
-                    <label>Username</label>
-                    <div class="input-wrapper">
-                        <input type="text" @bind="userModel.Username" class="dark-input" />
-                        <svg class="input-icon" viewBox="0 0 24 24"><path d="M20.71,7.04C21.1,6.65 21.1,6 20.71,5.63L18.37,3.29C18,2.9 17.35,2.9 16.96,3.29L15.12,5.12L18.87,8.87M3,17.25V21H6.75L17.81,9.93L14.07,6.18L3,17.25Z" /></svg>
-                    </div>
-                </div>
-
-                <div class="form-group">
-                    <label>Password</label>
-                    <div class="input-wrapper">
-                        <input type="password" @bind="userModel.Password" class="dark-input" />
-                        <svg class="input-icon" viewBox="0 0 24 24"><path d="M20.71,7.04C21.1,6.65 21.1,6 20.71,5.63L18.37,3.29C18,2.9 17.35,2.9 16.96,3.29L15.12,5.12L18.87,8.87M3,17.25V21H6.75L17.81,9.93L14.07,6.18L3,17.25Z" /></svg>
-                    </div>
-                </div>
-
-                <div class="form-group">
-                    <label>Birthday</label>
-                    <div class="input-wrapper">
-                        <input type="date" @bind="userModel.Birthday" class="dark-input" />
-                        <svg class="input-icon" viewBox="0 0 24 24"><path d="M19,19H5V8H19M16,1V3H8V1H6V3H5C3.89,3 3,3.89 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V5C21,3.89 20.1,3 19,3H18V1M17,12H12V17H17V12Z" /></svg>
-                    </div>
-                </div>
-
-                <div class="form-group">
-                    <label>Language</label>
-                    <div class="select-wrapper">
-                        <select @bind="userModel.Language" class="dark-select">
-                            <option value="English">English</option>
-                            <option value="Spanish">Spanish</option>
-                        </select>
-                        <span class="select-arrow">▼</span>
-                    </div>
+        <div class="settings-form">
+            <div class="form-group">
+                <label>Username</label>
+                <div class="input-wrapper">
+                    <input type="text" @bind="userModel.Username" class="dark-input" />
+                    <svg class="input-icon" viewBox="0 0 24 24"><path d="M20.71,7.04C21.1,6.65 21.1,6 20.71,5.63L18.37,3.29C18,2.9 17.35,2.9 16.96,3.29L15.12,5.12L18.87,8.87M3,17.25V21H6.75L17.81,9.93L14.07,6.18L3,17.25Z" /></svg>
                 </div>
             </div>
 
-            <div class="preferences-column">
+            <div class="form-group">
+                <label>Email</label>
+                <div class="input-wrapper">
+                    <input type="email" @bind="userModel.Email" class="dark-input" />
+                    <svg class="input-icon" viewBox="0 0 24 24"><path d="M20.71,7.04C21.1,6.65 21.1,6 20.71,5.63L18.37,3.29C18,2.9 17.35,2.9 16.96,3.29L15.12,5.12L18.87,8.87M3,17.25V21H6.75L17.81,9.93L14.07,6.18L3,17.25Z" /></svg>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>Password</label>
+                <div class="input-wrapper">
+                    <input type="password" @bind="userModel.Password" class="dark-input" />
+                    <svg class="input-icon" viewBox="0 0 24 24"><path d="M20.71,7.04C21.1,6.65 21.1,6 20.71,5.63L18.37,3.29C18,2.9 17.35,2.9 16.96,3.29L15.12,5.12L18.87,8.87M3,17.25V21H6.75L17.81,9.93L14.07,6.18L3,17.25Z" /></svg>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>Birthday</label>
+                <div class="input-wrapper">
+                    <input type="date" @bind="userModel.Birthday" class="dark-input" />
+                    <svg class="input-icon" viewBox="0 0 24 24"><path d="M19,19H5V8H19M16,1V3H8V1H6V3H5C3.89,3 3,3.89 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V5C21,3.89 20.1,3 19,3H18V1M17,12H12V17H17V12Z" /></svg>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>Language</label>
+                <div class="select-wrapper">
+                    <select @bind="userModel.Language" class="dark-select">
+                        <option value="English">English</option>
+                        <option value="Spanish">Spanish</option>
+                    </select>
+                    <span class="select-arrow">▼</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="preferences-column">
                 <div class="preferences-box">
 
                     <div class="preferences-header">
@@ -97,7 +106,7 @@
                 </div>
 
                 <button class="btn-action btn-apply" @onclick="GuardarCambios">
-                    <svg class="btn-svg" viewBox="0 0 24 24"><path d="M15,9H5V5H15M12,19A3,3 0 0,1 9,16A3,3 0 0,1 12,13A3,3 0 0,1 15,16A3,3 0 0,1 12,19M17,3H5C3.89,3 3,3.9 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V7L17,3Z" /></svg>
+                    <svg class="btn-svg" viewBox="0 0 24 24"><path d="M15,9H5V5H15M12,19A3,3 0 0,1 9,16A3,3 0 0,1 12,13A3,3 0 0,1 15,16A3,3 0 0,1 15,16A3,3 0 0,1 12,19M17,3H5C3.89,3 3,3.9 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V7L17,3Z" /></svg>
                     Apply Changes
                 </button>
             </div>
@@ -164,8 +173,6 @@
         </div>
     }
 
-</div>
-
 @code {
     private SettingsFields userModel = new();
 
@@ -175,30 +182,53 @@
     private string newPreferenceInput = "";
     private string validationMessage = "";
 
-    // Diccionario/Lista básica de insultos o palabras no permitidas (puedes ampliarla)
+    // Diccionario/Lista básica de insultos o palabras no permitidas
     private readonly HashSet<string> blocklist = new(StringComparer.OrdinalIgnoreCase)
     {
         "mierda", "puto", "puta", "carajo", "pelotudo", "boludo", "concha", "forro", "culiao"
     };
 
-    protected override void OnInitialized()
-    {
-        userModel.Email = "emailexample@example.com.ar";
-        userModel.Username = "UsernameExample";
-        userModel.Password = "********************";
-        userModel.Birthday = new DateTime(2026, 3, 19);
-        userModel.Language = "English";
+    private bool userLoaded = false;
+    private string saveMessage = string.Empty;
 
-        userModel.Preferences = new List<string> {
-            "Technology", "Weather", "Sports", "Aeronautics", "Prehistoric"
-        };
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+
+        await sessionService.InitializeAsync();
+        if (!sessionService.IsAuthenticated || !sessionService.UserId.HasValue)
+        {
+            Navigation.NavigateTo("/login", true);
+            return;
+        }
+
+        if (!userLoaded)
+        {
+            var user = await authService.GetUserByIdAsync(sessionService.UserId.Value);
+            if (user == null)
+            {
+                Navigation.NavigateTo("/login", true);
+                return;
+            }
+
+            userModel.Email = user.Email;
+            userModel.Username = user.Username;
+            userModel.Birthday = user.Birthday ?? DateTime.Today;
+            userModel.Password = string.Empty;
+            userModel.Language = user.Language == 2 ? "Spanish" : "English";
+            userModel.Preferences = await authService.GetUserPreferencesAsync(sessionService.UserId.Value);
+
+            userLoaded = true;
+            StateHasChanged();
+        }
     }
 
-    // Lógica del Modal de Temas
     private void ManejarTemas() => isThemeModalOpen = true;
     private void CerrarModal() => isThemeModalOpen = false;
-    private void SeleccionarTema(string tema)
+
+    private async Task SeleccionarTema(string tema)
     {
+        await JSRuntime.InvokeVoidAsync("localStorage.setItem", "selectedTheme", tema);
         ThemeState.SetTheme(tema);
         isThemeModalOpen = false;
     }
@@ -247,9 +277,45 @@
         }
     }
 
+    private async Task GuardarCambios()
+    {
+        saveMessage = string.Empty;
+
+        if (!sessionService.UserId.HasValue)
+        {
+            saveMessage = "No se encontró el usuario autenticado.";
+            return;
+        }
+
+        var updatedPassword = string.IsNullOrWhiteSpace(userModel.Password) ? null : userModel.Password;
+
+        var success = await authService.ActualizarPerfilAsync(
+            sessionService.UserId.Value,
+            userModel.Username,
+            userModel.Email,
+            userModel.Birthday,
+            userModel.Language == "English" ? "1" : "2",
+            updatedPassword);
+
+        var prefSuccess = await authService.ReplacePreferencesForUserAsync(sessionService.UserId.Value, userModel.Preferences);
+        if (success && prefSuccess)
+        {
+            await sessionService.SetUserAsync(sessionService.UserId.Value, userModel.Username);
+            saveMessage = "Perfil actualizado correctamente.";
+        }
+        else
+        {
+            saveMessage = "No se pudo guardar el perfil.";
+        }
+    }
+
     private void EliminarPreferencia(string target) => userModel.Preferences.Remove(target);
-    private void GuardarCambios() => Console.WriteLine("Cambios guardados.");
-    private void ManejarLogout() => Console.WriteLine("Cerrando sesión...");
+
+    private async Task ManejarLogout()
+    {
+        await sessionService.ClearAsync();
+        Navigation.NavigateTo("/login", true);
+    }
 
     public class SettingsFields
     {

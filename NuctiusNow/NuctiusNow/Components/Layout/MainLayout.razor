@@ -1,30 +1,42 @@
 ﻿@inherits LayoutComponentBase
 @inject ThemeState ThemeState
+@inject IJSRuntime JSRuntime
 @implements IDisposable
 
-<!-- Envolvemos todo el layout con la variable dinámica -->
-<div class="theme-@ThemeState.CurrentTheme" style="min-height: 100vh; background-color: var(--bg-main); color: var(--text-main); transition: background-color 0.3s ease;">
-
+<div class="theme-@ThemeState.CurrentTheme" style="min-height: 100vh; background-color: var(--bg-main); transition: background-color 0.3s ease, color 0.3s ease;">
     <main>
-        <!-- Tu menú de navegación o headers van acá -->
-
-        <article class="content">
+        <article class="content px-4">
             @Body
         </article>
     </main>
-
 </div>
 
 @code {
     protected override void OnInitialized()
     {
-        // Nos suscribimos a los cambios de tema
+        // Seguimos escuchando cambios en vivo
         ThemeState.OnChange += StateHasChanged;
+    }
+
+    // Este método se ejecuta cuando los elementos ya están vivos en el navegador
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // Solo nos interesa la primera vez que se carga la página
+        if (firstRender)
+        {
+            // Leemos el localStorage
+            var savedTheme = await JSRuntime.InvokeAsync<string>("localStorage.getItem", "selectedTheme");
+            
+            // Si el usuario ya tenía un tema guardado y es distinto al actual, lo aplicamos
+            if (!string.IsNullOrEmpty(savedTheme) && savedTheme != ThemeState.CurrentTheme)
+            {
+                ThemeState.SetTheme(savedTheme);
+            }
+        }
     }
 
     public void Dispose()
     {
-        // Nos desuscribimos para evitar memory leaks
         ThemeState.OnChange -= StateHasChanged;
     }
 }

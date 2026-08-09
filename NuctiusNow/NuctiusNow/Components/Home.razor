@@ -1,5 +1,8 @@
 ﻿@page "/"
 
+@inject UserSessionService sessionService
+@inject NavigationManager Navigation
+
 <PageTitle>NuctiusNow</PageTitle>
 
 <div class="home-page-container">
@@ -57,13 +60,25 @@
 @code {
     private bool isUserLoggedIn = true;
     private bool isPremium = true;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+
+        await sessionService.InitializeAsync();
+        if (!sessionService.IsAuthenticated)
+        {
+            Navigation.NavigateTo("/login", true);
+        }
+    }
+
     // Modelo básico para renderizar el grid dinámicamente
     public class CategoriaModel
     {
-        public string Id { get; set; }
-        public string Nombre { get; set; }
-        public string ImagenNoticiaIA { get; set; } // Aquí la IA inyecta la primera imagen que encuentra
-        public string ImagenUrlRespaldoInternet { get; set; } // Link estático de internet por si la IA no encuentra nada
+        public string Id { get; set; } = string.Empty;
+        public string Nombre { get; set; } = string.Empty;
+        public string ImagenNoticiaIA { get; set; } = string.Empty; // Aquí la IA inyecta la primera imagen que encuentra
+        public string ImagenUrlRespaldoInternet { get; set; } = string.Empty; // Link estático de internet por si la IA no encuentra nada
     }
 
     private List<CategoriaModel> Categorias = new();

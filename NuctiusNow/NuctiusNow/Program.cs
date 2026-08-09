@@ -1,40 +1,38 @@
-using NuctiusNow.Client.Pages;
-using NuctiusNow.Components;
 using Microsoft.EntityFrameworkCore;
+using NuctiusNow.Components;
+using NuctiusNow.Components.User_Related;
+using NuctiusNow.Data;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Agregá esta línea en tu Program.cs
+// 1. SERVICIOS Y ESTADOS
 builder.Services.AddScoped<ThemeState>();
 
-// ======================================================================
-// 1. SECCIÓN DE SERVICIOS
-// ======================================================================
-
-// ¡FUNDAMENTAL! Agrega el soporte para componentes Razor y sus modos interactivos
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents()
     .AddInteractiveWebAssemblyComponents();
 
-// Leemos la cadena de conexión a PostgreSQL
+// Configuraciï¿½n de PostgreSQL con Entity Framework Core
 var connectionString = builder.Configuration.GetConnectionString("PostgresConnection");
-
-// Registramos tu DbContext antes de cerrar el contenedor
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseNpgsql(connectionString));
 
+// Registro del servicio de autenticaciï¿½n
+builder.Services.AddScoped<AuthService>();
+// Registro del servicio de sesiÃ³n de usuario para control de acceso en cliente
+builder.Services.AddScoped<UserSessionService>();
+// Register HttpClient factory for server-side HTTP calls (reCAPTCHA verification)
+builder.Services.AddHttpClient();
 
-// EL CANDADO: Construimos la aplicación
 var app = builder.Build();
 
-
-// ======================================================================
-// 2. SECCIÓN DEL PIPELINE / MIDDLEWARES (CONFIGURACIÓN DE LA APP)
-// ======================================================================
+// 2. PIPELINE / MIDDLEWARES
 if (app.Environment.IsDevelopment())
 {
     app.UseDeveloperExceptionPage();
-    app.UseWebAssemblyDebugging(); // Permite depurar el proyecto .Client
+    // WebAssembly debugging can interfere with hybrid interactive server mode and may throw
+    // response-started exceptions when the debug proxy connects.
+    // app.UseWebAssemblyDebugging();
 }
 else
 {
@@ -44,15 +42,12 @@ else
 
 app.UseHttpsRedirection();
 app.UseStaticFiles();
-
-// Requerido en .NET 8 para la seguridad de formularios y componentes
 app.UseAntiforgery();
 
-// ======================================================================System.InvalidOperationException: 'Assembly already defined.'
-// 3. MAPEO DE BLAZOR (Lo que hace que tus páginas carguen)
-// ======================================================================
+// 3. MAPEO DE BLAZOR
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode()
-    .AddInteractiveWebAssemblyRenderMode(); // Sin el AddAdditionalAssemblies // Busca las páginas en tu proyecto Client
+    .AddInteractiveWebAssemblyRenderMode()
+    .AddAdditionalAssemblies(typeof(NuctiusNow.Client._Imports).Assembly);
 
 app.Run();

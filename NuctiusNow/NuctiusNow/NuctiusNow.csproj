@@ -13,6 +13,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\NuctiusNow.Client\NuctiusNow.Client.csproj" />
+    <PackageReference Include="BCrypt.Net-Next" Version="4.2.0" />
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="8.0.24" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.4">
       <PrivateAssets>all</PrivateAssets>

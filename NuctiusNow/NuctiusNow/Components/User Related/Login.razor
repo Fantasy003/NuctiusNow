@@ -1,5 +1,8 @@
 ﻿@page "/login"
 @rendermode InteractiveServer
+@inject AuthService authService
+@inject NavigationManager Navigation
+@inject UserSessionService sessionService
 
 <PageTitle>Login - NuctiusNow</PageTitle>
 
@@ -12,6 +15,14 @@
         </div>
 
         <div class="login-body">
+            @if (!string.IsNullOrEmpty(errorMessage))
+            {
+                <div class="error-alert">
+                    <span class="error-icon">⚠️</span>
+                    <span class="error-text">@errorMessage</span>
+                </div>
+            }
+
             <EditForm Model="@loginModel" OnValidSubmit="HandleLogin">
 
                 <div class="form-group">
@@ -45,11 +56,27 @@
 
 @code {
     private LoginFields loginModel = new();
+    private string errorMessage = string.Empty;
 
-    private void HandleLogin()
+    private async Task HandleLogin()
     {
-        // Acá manejás la lógica de autenticación cuando hacen clic en GO
-        Console.WriteLine($"Intentando loguear a: {loginModel.Username}");
+        errorMessage = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(loginModel.Username) || string.IsNullOrWhiteSpace(loginModel.Password))
+        {
+            errorMessage = "Please provide both username and password.";
+            return;
+        }
+
+        var (user, message) = await authService.LoginAsync(loginModel.Username, loginModel.Password);
+        if (user == null)
+        {
+            errorMessage = message;
+            return;
+        }
+
+        await sessionService.SetUserAsync(user.IdUser, user.Username);
+        Navigation.NavigateTo("/");
     }
 
     public class LoginFields
@@ -57,5 +84,16 @@
         public string Username { get; set; } = string.Empty;
         public string Password { get; set; } = string.Empty;
         public bool RememberMe { get; set; }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+
+        await sessionService.InitializeAsync();
+        if (sessionService.IsAuthenticated)
+        {
+            Navigation.NavigateTo("/", true);
+        }
     }
 }
