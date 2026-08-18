@@ -99,15 +99,31 @@
                         <svg class="btn-svg" viewBox="0 0 24 24"><path d="M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A1.5,1.5 0 0,0 13.5,20.5A1.5,1.5 0 0,0 13,19.4L13.1,19.3C13.3,19.1 13.6,19 14,19H16A5,5 0 0,0 21,14C21,9.24 16.96,5 12,5A1,1 0 0,0 11,6A1,1 0 0,0 12,7A3,3 0 0,1 15,10A1,1 0 0,0 16,11H17A2,2 0 0,1 19,13A2,2 0 0,1 17,15H14C12.34,15 11,13.66 11,12A4,4 0 0,1 15,8A1,1 0 0,0 15,6C15,4.34 13.66,3 12,3A8,8 0 0,0 4,11A8,8 0 0,0 12,19A1,1 0 0,0 13,18A1,1 0 0,0 12,17A6,6 0 0,1 6,11A6,6 0 0,1 12,5Z" /></svg>
                         Themes
                     </button>
-                    <button class="btn-action btn-logout" @onclick="ManejarLogout">
-                        <svg class="btn-svg" viewBox="0 0 24 24"><path d="M16,17V14H9V10H16V7L21,12L16,17M14,2A2,2 0 0,1 16,4V6H14V4H5V20H14V18H16V20A2,2 0 0,1 14,22H5A2,2 0 0,1 3,20V4A2,2 0 0,1 5,2M14,10V14H11V10H14Z" /></svg>
-                        Logout
+                    <button class="btn-action btn-logout" @onclick="ManejarLogout" disabled="@isLoggingOut">
+                        @if (isLoggingOut)
+                        {
+                            <svg class="btn-svg" viewBox="0 0 24 24"><path d="M12 4v4" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                            <span>Logging out...</span>
+                        }
+                        else
+                        {
+                            <svg class="btn-svg" viewBox="0 0 24 24"><path d="M16,17V14H9V10H16V7L21,12L16,17M14,2A2,2 0 0,1 16,4V6H14V4H5V20H14V18H16V20A2,2 0 0,1 14,22H5A2,2 0 0,1 3,20V4A2,2 0 0,1 5,2M14,10V14H11V10H14Z" /></svg>
+                            <span>Logout</span>
+                        }
                     </button>
                 </div>
 
-                <button class="btn-action btn-apply" @onclick="GuardarCambios">
-                    <svg class="btn-svg" viewBox="0 0 24 24"><path d="M15,9H5V5H15M12,19A3,3 0 0,1 9,16A3,3 0 0,1 12,13A3,3 0 0,1 15,16A3,3 0 0,1 15,16A3,3 0 0,1 12,19M17,3H5C3.89,3 3,3.9 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V7L17,3Z" /></svg>
-                    Apply Changes
+                <button class="btn-action btn-apply" @onclick="GuardarCambios" disabled="@isSaving">
+                    @if (isSaving)
+                    {
+                        <svg class="btn-svg" viewBox="0 0 24 24"><path d="M12 4v4" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                        <span>Saving...</span>
+                    }
+                    else
+                    {
+                        <svg class="btn-svg" viewBox="0 0 24 24"><path d="M15,9H5V5H15M12,19A3,3 0 0,1 9,16A3,3 0 0,1 12,13A3,3 0 0,1 15,16A3,3 0 0,1 15,16A3,3 0 0,1 12,19M17,3H5C3.89,3 3,3.9 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V7L17,3Z" /></svg>
+                        <span>Apply Changes</span>
+                    }
                 </button>
             </div>
 
@@ -181,6 +197,9 @@
     private bool isPrefModalOpen = false;
     private string newPreferenceInput = "";
     private string validationMessage = "";
+
+    private bool isSaving = false;
+    private bool isLoggingOut = false;
 
     // Diccionario/Lista básica de insultos o palabras no permitidas
     private readonly HashSet<string> blocklist = new(StringComparer.OrdinalIgnoreCase)
@@ -280,32 +299,44 @@
     private async Task GuardarCambios()
     {
         saveMessage = string.Empty;
-
         if (!sessionService.UserId.HasValue)
         {
             saveMessage = "No se encontró el usuario autenticado.";
             return;
         }
 
-        var updatedPassword = string.IsNullOrWhiteSpace(userModel.Password) ? null : userModel.Password;
-
-        var success = await authService.ActualizarPerfilAsync(
-            sessionService.UserId.Value,
-            userModel.Username,
-            userModel.Email,
-            userModel.Birthday,
-            userModel.Language == "English" ? "1" : "2",
-            updatedPassword);
-
-        var prefSuccess = await authService.ReplacePreferencesForUserAsync(sessionService.UserId.Value, userModel.Preferences);
-        if (success && prefSuccess)
+        isSaving = true;
+        try
         {
-            await sessionService.SetUserAsync(sessionService.UserId.Value, userModel.Username);
-            saveMessage = "Perfil actualizado correctamente.";
+            var updatedPassword = string.IsNullOrWhiteSpace(userModel.Password) ? null : userModel.Password;
+
+            var success = await authService.ActualizarPerfilAsync(
+                sessionService.UserId.Value,
+                userModel.Username,
+                userModel.Email,
+                userModel.Birthday,
+                userModel.Language == "English" ? "1" : "2",
+                updatedPassword);
+
+            var prefSuccess = await authService.ReplacePreferencesForUserAsync(sessionService.UserId.Value, userModel.Preferences);
+            if (success && prefSuccess)
+            {
+                await sessionService.SetUserAsync(sessionService.UserId.Value, userModel.Username);
+                saveMessage = "Perfil actualizado correctamente.";
+            }
+            else
+            {
+                saveMessage = "No se pudo guardar el perfil.";
+            }
         }
-        else
+        catch (Exception ex)
         {
-            saveMessage = "No se pudo guardar el perfil.";
+            saveMessage = "Error al guardar: " + ex.Message;
+        }
+        finally
+        {
+            isSaving = false;
+            StateHasChanged();
         }
     }
 
@@ -313,8 +344,18 @@
 
     private async Task ManejarLogout()
     {
-        await sessionService.ClearAsync();
-        Navigation.NavigateTo("/login", true);
+        if (isLoggingOut) return;
+        isLoggingOut = true;
+        try
+        {
+            // Clear client session and navigate to login
+            await sessionService.ClearAsync();
+            Navigation.NavigateTo("/login", true);
+        }
+        finally
+        {
+            isLoggingOut = false;
+        }
     }
 
     public class SettingsFields

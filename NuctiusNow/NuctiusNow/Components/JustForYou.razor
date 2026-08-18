@@ -1,6 +1,8 @@
 ﻿@page "/just-for-you"
 @rendermode InteractiveServer
+@using NuctiusNow.Services
 @inject UserSessionService sessionService
+@inject RecommendationEngine recommendationEngine
 @inject NavigationManager Navigation
 
 <PageTitle>Just For You - NuctiusNow</PageTitle>
@@ -48,6 +50,10 @@
 
     </div>
 
+    <div class="diagnostic-toggle">
+        <button class="btn-diagnostic" @onclick="ToggleDiagnostics">@((showDiagnostics) ? "Hide Diagnostics" : "Show Diagnostics")</button>
+    </div>
+
     <div class="floating-menu-container">
         <div class="floating-menu-card">
 
@@ -80,23 +86,58 @@
 
 </div>
 
+@if (showDiagnostics)
+{
+    <div class="diagnostic-panel">
+        <h3>Diagnostics</h3>
+        <div class="diagnostic-entries">
+            @if (diagnostics.Count == 0)
+            {
+                <div>No diagnostic messages yet.</div>
+            }
+            else
+            {
+                <ul>
+                    @foreach (var d in diagnostics)
+                    {
+                        <li>@d</li>
+                    }
+                </ul>
+            }
+        </div>
+    </div>
+}
+
 @code {
     private bool isUserLoggedIn = true;
     private bool isPremium = true;
     private List<JfyItem> NoticiasPersonalizadas = new();
+    private List<string> diagnostics = new();
+    private bool showDiagnostics = false;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender) return;
 
-        await sessionService.InitializeAsync();
+        try
+        {
+            diagnostics.Add($"OnAfterRenderAsync: initializing session at {DateTime.UtcNow}");
+            await sessionService.InitializeAsync();
+            diagnostics.Add($"Session initialized. IsAuthenticated={sessionService.IsAuthenticated}");
+        }
+        catch (Exception ex)
+        {
+            diagnostics.Add($"Exception during session initialize: {ex.Message}");
+        }
+
         if (!sessionService.IsAuthenticated)
         {
+            diagnostics.Add("User not authenticated - navigating to login");
             Navigation.NavigateTo("/login", true);
             return;
         }
 
-        GenerarNoticiasJFY();
+        await LoadRecommendationsAsync();
     }
 
     private void RefreshFeed()
@@ -106,16 +147,67 @@
         StateHasChanged();
     }
 
-    private void GenerarNoticiasJFY()
+    private async Task LoadRecommendationsAsync()
     {
-        // Añadimos IDs únicos y placeholders de imágenes dinámicas para las pruebas
-        NoticiasPersonalizadas = new List<JfyItem>
+        NoticiasPersonalizadas = new List<JfyItem>();
+        diagnostics.Add($"LoadRecommendationsAsync: start at {DateTime.UtcNow}");
+
+        if (sessionService.UserId == null)
         {
-            new JfyItem { Id = 1, Categoria = "Technology", Titulo = "NVIDIA: SPARK PROCESSOR", Contenido = "DASDADADADAADASDDADSADASDASDASDASDASDASDADADADADADADADADADADADADADADADASDASDASDADADADASDADADASDADADADSADADADADADADDADASDADADADADADASDADADADADSDDADADADADADADADADADADADADADADADSADASDASDADADADSADADADADADASDADADADAD", UrlImagen = "https://picsum.photos/id/0/150/150" },
-            new JfyItem { Id = 2, Categoria = "Sports", Titulo = "WORLD CUP: URUGUAY ELIMINATED", Contenido = "DASDADADADAADASDDADSADASDASDASDASDASDASDADADADADADADADADADADADADADADADASDASDASDADADADASDADADASDADADADSADADADADADADDADASDADADADADADASDADADADADSDDADADADADADADADADADADADADADADADSADASDASDADADADSADADADADADASDADADADAD", UrlImagen = "https://picsum.photos/id/73/150/150" },
-            new JfyItem { Id = 3, Categoria = "Weather", Titulo = "ARGENTINA: RAINING ON MOND", Contenido = "DASDADADADAADASDDADSADASDASDASDASDASDASDADADADADADADADADADADADADADADADASDASDASDADADADASDADADASDADADADSADADADADADADDADASDADADADADADASDADADADADSDDADADADADADADADADADADADADADADADSADASDASDADADADSADADADADADASDADADADAD", UrlImagen = "https://picsum.photos/id/401/150/150" },
-            new JfyItem { Id = 4, Categoria = "Technology", Titulo = "AMD: THEIR LAST INNOVATION", Contenido = "DASDADADADAADASDDADSADASDASDASDASDASDASDADADADADADADADADADADADADADADADASDASDASDADADADASDADADASDADADADSADADADADADADDADASDADADADADADASDADADADADSDDADADADADADADADADADADADADADADADSADASDASDADADADSADADADADADASDADADADAD", UrlImagen = "https://picsum.photos/id/160/150/150" }
-        };
+            diagnostics.Add("LoadRecommendationsAsync: sessionService.UserId is null - no recommendations will be loaded");
+            // Fallback: keep empty or load defaults
+            StateHasChanged();
+            return;
+        }
+
+        try
+        {
+            diagnostics.Add($"Requesting recommendations for user {sessionService.UserId}");
+            // Obtain recommendations for the authenticated user, considering last 30 days
+            var recommended = await recommendationEngine.ObtenerRecomendacionesParaUsuarioAsync(sessionService.UserId.Value, 8, 30);
+            diagnostics.Add($"RecommendationEngine returned {recommended?.Count ?? 0} items");
+
+            var rnd = new Random();
+            var items = new List<JfyItem>();
+            int idx = 0;
+            foreach (var n in recommended)
+            {
+                idx++;
+                try
+                {
+                    diagnostics.Add($"Summarizing item {idx} id={n.IdNews}");
+                    var summary = await recommendationEngine.SummarizeAsync(n.DetailNews);
+                    items.Add(new JfyItem
+                    {
+                        Id = n.IdNews,
+                        Categoria = n.Tag?.Name ?? "General",
+                        Titulo = n.DetailNews?.Keyword ?? (n.Tag?.Name ?? "News"),
+                        Contenido = summary,
+                        UrlImagen = $"https://picsum.photos/id/{(n.IdNews % 100)}/150/150"
+                    });
+                }
+                catch (Exception exInner)
+                {
+                    diagnostics.Add($"Error summarizing news id={n?.IdNews.ToString() ?? "?"}: {exInner.Message}");
+                }
+            }
+
+            NoticiasPersonalizadas = items.OrderBy(_ => rnd.Next()).ToList();
+        }
+        catch (Exception ex)
+        {
+            diagnostics.Add($"LoadRecommendationsAsync exception: {ex.Message}");
+            // ensure UI shows something and keep app running
+            NoticiasPersonalizadas = new List<JfyItem>();
+        }
+
+        diagnostics.Add($"LoadRecommendationsAsync: finished at {DateTime.UtcNow} - items={NoticiasPersonalizadas.Count}");
+        StateHasChanged();
+    }
+
+    private void ToggleDiagnostics()
+    {
+        showDiagnostics = !showDiagnostics;
     }
 
     public class JfyItem

@@ -1,4 +1,5 @@
 ﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace NuctiusNow.Components.User_Related;
@@ -18,4 +19,7 @@ public class DetailNews
 
     [Column("news_date")]
     public DateTime NewsDate { get; set; }
+
+    [Column("ai_summary")]
+    public string? AiSummary { get; set; }
 }

@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using NuctiusNow.Components;
 using NuctiusNow.Components.User_Related;
 using NuctiusNow.Data;
+using NuctiusNow.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -21,6 +22,12 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
 builder.Services.AddScoped<AuthService>();
 // Registro del servicio de sesión de usuario para control de acceso en cliente
 builder.Services.AddScoped<UserSessionService>();
+// Registro del motor de recomendaciones (AI helper)
+builder.Services.AddScoped<RecommendationEngine>();
+// Registro del servicio LLM local (llamar a un servidor LLM local por HTTP)
+builder.Services.AddScoped<ILocalLlmService, LocalLlmService>();
+// Servicio para almacenar noticias capturadas desde la web
+builder.Services.AddScoped<NewsIngestService>();
 // Register HttpClient factory for server-side HTTP calls (reCAPTCHA verification)
 builder.Services.AddHttpClient();
 
