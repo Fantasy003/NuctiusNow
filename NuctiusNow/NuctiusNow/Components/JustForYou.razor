@@ -1,6 +1,7 @@
 ﻿@page "/just-for-you"
 @rendermode InteractiveServer
 @using NuctiusNow.Services
+@using NuctiusNow.Client
 @inject UserSessionService sessionService
 @inject RecommendationEngine recommendationEngine
 @inject NavigationManager Navigation
@@ -48,10 +49,6 @@
             </button>
         </div>
 
-    </div>
-
-    <div class="diagnostic-toggle">
-        <button class="btn-diagnostic" @onclick="ToggleDiagnostics">@((showDiagnostics) ? "Hide Diagnostics" : "Show Diagnostics")</button>
     </div>
 
     <div class="floating-menu-container">
@@ -154,45 +151,53 @@
 
         if (sessionService.UserId == null)
         {
-            diagnostics.Add("LoadRecommendationsAsync: sessionService.UserId is null - no recommendations will be loaded");
-            // Fallback: keep empty or load defaults
+            diagnostics.Add("User ID is null - no recommendations loaded.");
             StateHasChanged();
             return;
         }
 
         try
         {
-            diagnostics.Add($"Requesting recommendations for user {sessionService.UserId}");
-            // Obtain recommendations for the authenticated user, considering last 30 days
-            var recommended = await recommendationEngine.ObtenerRecomendacionesParaUsuarioAsync(sessionService.UserId.Value, 8, 30);
-            diagnostics.Add($"RecommendationEngine returned {recommended?.Count ?? 0} items");
+            // 1. Fetch preferences from SQL using the assumed method signature
+        List<string> allPreferences = await recommendationEngine.GetUserPreferencesAsync(sessionService.UserId.Value);
 
-            var rnd = new Random();
-            var items = new List<JfyItem>();
-            int idx = 0;
-            foreach (var n in recommended)
+            if (allPreferences == null || !allPreferences.Any())
             {
-                idx++;
-                try
-                {
-                    diagnostics.Add($"Summarizing item {idx} id={n.IdNews}");
-                    var summary = await recommendationEngine.SummarizeAsync(n.DetailNews);
-                    items.Add(new JfyItem
-                    {
-                        Id = n.IdNews,
-                        Categoria = n.Tag?.Name ?? "General",
-                        Titulo = n.DetailNews?.Keyword ?? (n.Tag?.Name ?? "News"),
-                        Contenido = summary,
-                        UrlImagen = $"https://picsum.photos/id/{(n.IdNews % 100)}/150/150"
-                    });
-                }
-                catch (Exception exInner)
-                {
-                    diagnostics.Add($"Error summarizing news id={n?.IdNews.ToString() ?? "?"}: {exInner.Message}");
-                }
+                diagnostics.Add("No user preferences found in the database.");
+                NoticiasPersonalizadas = new List<JfyItem>();
+                StateHasChanged();
+                return;
             }
 
-            NoticiasPersonalizadas = items.OrderBy(_ => rnd.Next()).ToList();
+            // 2. Select exactly 4 random preferences (or fewer if less than 4 are available)
+            var random = new Random();
+            var selectedPrefs = allPreferences.OrderBy(x => random.Next()).Take(4).ToList();
+
+            var items = new List<JfyItem>();
+            int idCounter = 1;
+
+            // 3. Loop through preferences, prompt the AI, and create the news item
+            foreach (var pref in selectedPrefs)
+            {
+                diagnostics.Add($"Prompting AI for preference: {pref}");
+
+                // Build the specific prompt for the AI
+                string prompt = $"Write a brief, current news summary about: {pref}";
+
+                // Call your LLM to get the summary based on the prompt
+                var aiSummary = await recommendationEngine.SummarizeAsync(prompt);
+
+                items.Add(new JfyItem
+                {
+                    Id = idCounter++,
+                    Categoria = pref, // Use the preference as the category tag
+                    Titulo = $"Latest Updates: {pref}",
+                    Contenido = !string.IsNullOrWhiteSpace(aiSummary) ? aiSummary : "Summary unavailable.",
+                    UrlImagen = $"https://picsum.photos/seed/{pref.Replace(" ", "")}/150/150" // Consistent random image per topic
+                });
+            }
+
+            NoticiasPersonalizadas = items;
         }
         catch (Exception ex)
         {
@@ -201,13 +206,42 @@
             NoticiasPersonalizadas = new List<JfyItem>();
         }
 
-        diagnostics.Add($"LoadRecommendationsAsync: finished at {DateTime.UtcNow} - items={NoticiasPersonalizadas.Count}");
+        diagnostics.Add($"Finished at {DateTime.UtcNow} - items={NoticiasPersonalizadas.Count}");
         StateHasChanged();
     }
 
     private void ToggleDiagnostics()
     {
         showDiagnostics = !showDiagnostics;
+    }
+
+    private async Task AiSearchNow()
+    {
+        diagnostics.Add($"AI Search started at {DateTime.UtcNow}");
+        if (sessionService.UserId == null)
+        {
+            diagnostics.Add("AI Search: user not authenticated");
+            return;
+        }
+
+        try
+        {
+            var ingested = await recommendationEngine.ExecuteNewsSearchWorkflowAsync(sessionService.UserId.Value, numSearches: 4);
+            diagnostics.Add($"AI Search: complete - ingested {ingested.Count} URLs");
+            foreach (var u in ingested) diagnostics.Add($"✓ Ingested: {u}");
+        }
+        catch (Exception ex)
+        {
+            diagnostics.Add($"AI Search error: {ex.Message}");
+        }
+
+        await LoadRecommendationsAsync();
+    }
+
+    public string GetRandomString(int min, int max)
+    {
+        var random = new Random();
+        return random.Next(min, max + 1).ToString("D3");
     }
 
     public class JfyItem

@@ -1,11 +1,15 @@
-using System.Net.Http.Json;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Net.Http;
 using System.Net.Http.Json;
 using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
-using System.Text.Json;
-using System.Threading;
 
 namespace NuctiusNow.Services;
 
@@ -20,9 +24,6 @@ public interface ILocalLlmService
 
 /// <summary>
 /// Simple HTTP client wrapper to call a local LLM REST endpoint.
-/// The local LLM is expected to expose a JSON API that accepts { prompt, max_tokens }
-/// and returns { text: "..." } or similar. This implementation is intentionally
-/// minimal: adapt the request/response shape to the server you run locally (e.g. llama.cpp HTTP server, LLM REST API).
 /// </summary>
 public class LocalLlmService : ILocalLlmService
 {
@@ -45,8 +46,6 @@ public class LocalLlmService : ILocalLlmService
         {
             _endpoint = "http://26.209.188.105:1234/v1/completions";
         }
-
-
         else if (Uri.IsWellFormedUriString(endpointFromConfig, UriKind.Absolute))
         {
             _endpoint = endpointFromConfig!;
@@ -59,7 +58,7 @@ public class LocalLlmService : ILocalLlmService
 
         _maxConcurrency = config.GetValue<int?>("LocalLlm:MaxConcurrency") ?? 2;
         _batchSize = config.GetValue<int?>("LocalLlm:BatchSize") ?? 8;
-        _modelId = config.GetValue<string?>("LocalLlm:Model") ?? config.GetValue<string?>("LocalLlm:ModelId") ?? "minicpm5-1b-claude-opus-fable5-thinking";
+        _modelId = config.GetValue<string?>("LocalLlm:Model") ?? config.GetValue<string?>("LocalLlm:ModelId") ?? "gemma-3-4b-vl-it-gemini-pro-heretic-uncensored-thinking_gguf";
         _semaphore = new SemaphoreSlim(_maxConcurrency, _maxConcurrency);
     }
 
@@ -70,19 +69,18 @@ public class LocalLlmService : ILocalLlmService
         var client = _httpFactory.CreateClient();
         var prompt = $"Summarize the following news article in one short paragraph (max {maxTokens} characters):\n\n{text}";
 
-        // include model id if configured
         var payload = new Dictionary<string, object?>()
         {
             ["prompt"] = prompt,
             ["max_tokens"] = maxTokens
         };
+
         if (!string.IsNullOrWhiteSpace(_modelId)) payload["model"] = _modelId;
+
         // include plugin metadata so the LLM can use web-search if supported
         payload["plugin"] = new { type = "plugin", id = "greggg/web-search" };
-        // Plugin integration: include web-search plugin descriptor in the request payload
-        // This field is optional for servers that support plugin metadata in the prompt request.
-        payload["plugin"] = new { type = "plugin", id = "greggg/web-search" };
 
+        await _semaphore.WaitAsync();
         try
         {
             using var resp = await client.PostAsJsonAsync(_endpoint, payload, _jsonOptions);
@@ -95,6 +93,10 @@ public class LocalLlmService : ILocalLlmService
         {
             return null;
         }
+        finally
+        {
+            _semaphore.Release();
+        }
     }
 
     public async Task<double?> ScoreCandidateAsync(string userProfile, string candidateText)
@@ -102,16 +104,15 @@ public class LocalLlmService : ILocalLlmService
         if (string.IsNullOrWhiteSpace(candidateText)) return null;
 
         var client = _httpFactory.CreateClient();
-        // Ask the model for a numeric relevance score between 0 and 100
         var prompt = $"Given the user profile or preferences:\n{userProfile}\n\nRate the relevance of this candidate news article on a scale 0-100 and only return the numeric score:\n{candidateText}";
         var payload = new Dictionary<string, object?>()
         {
             ["prompt"] = prompt,
             ["max_tokens"] = 10
         };
+
         if (!string.IsNullOrWhiteSpace(_modelId)) payload["model"] = _modelId;
 
-        // Use semaphore for rate-limiting
         await _semaphore.WaitAsync();
         try
         {
@@ -145,7 +146,6 @@ public class LocalLlmService : ILocalLlmService
         var results = new List<string?>();
         if (texts == null || texts.Count == 0) return results;
 
-        // Process in batches to avoid huge prompts
         for (int i = 0; i < texts.Count; i += _batchSize)
         {
             var batch = texts.Skip(i).Take(_batchSize).ToList();
@@ -161,8 +161,8 @@ public class LocalLlmService : ILocalLlmService
             }
 
             var payload = new { prompt = sb.ToString(), max_tokens = maxTokens, plugin = new { type = "plugin", id = "greggg/web-search" } };
-
             var client = _httpFactory.CreateClient();
+
             await _semaphore.WaitAsync();
             try
             {
@@ -172,16 +172,19 @@ public class LocalLlmService : ILocalLlmService
                     results.AddRange(batch.Select(_ => (string?)null));
                     continue;
                 }
-            var text = await ParseResponseTextAsync(resp.Content) ?? string.Empty;
-            try
-            {
-                _logger.LogInformation("LocalLlmService.SearchWebAsync raw response: {ResponseText}", text);
-            }
-            catch
-            {
-                // swallow logging errors
-            }
-                var parts = text.Split(marker, StringSplitOptions.RemoveEmptyEntries).Select(p => p.Trim()).ToList();
+
+                var text = await ParseResponseTextAsync(resp.Content) ?? string.Empty;
+
+                try
+                {
+                    _logger.LogInformation("LocalLlmService.SummarizeBatchAsync raw response: {ResponseText}", text);
+                }
+                catch
+                {
+                    // swallow logging errors
+                }
+
+                var parts = text.Split(new[] { marker }, StringSplitOptions.RemoveEmptyEntries).Select(p => p.Trim()).ToList();
 
                 // If marker not present, fallback to splitting by double newlines
                 if (parts.Count != batch.Count)
@@ -213,15 +216,16 @@ public class LocalLlmService : ILocalLlmService
         var results = new List<(string Title, string Url, string Snippet)>();
         if (string.IsNullOrWhiteSpace(query)) return results;
 
-        var marker = "<|RESULT|>";
         var sb = new StringBuilder();
-        sb.AppendLine($"Search the web for the following query and return up to {maxResults} results. For each result output in the format: Title | URL | Snippet and separate results exactly by the token {marker} with no extra commentary.");
-        sb.AppendLine();
-        sb.AppendLine(query);
+        sb.AppendLine("CRITICAL INSTRUCTION: Return ONLY a valid JSON array. Your very first word must be the direct core answer, data, or content requested. No preamble, no explanation, no greeting text.");
+        sb.AppendLine("Format: [{\"title\":\"Article Title\",\"url\":\"https://example.com\",\"summary\":\"One sentence summary\"}]");
+        sb.AppendLine("Perform a web search for this query and return results as JSON array:");
+        sb.AppendLine($"Query: {query}");
+        sb.AppendLine("Return ONLY the JSON array, nothing else.");
 
-        var payload = new { prompt = sb.ToString(), max_tokens = 300, plugin = new { type = "plugin", id = "greggg/web-search" } };
-
+        var payload = new { prompt = sb.ToString(), max_tokens = 600, plugin = new { type = "plugin", id = "greggg/web-search" } };
         var client = _httpFactory.CreateClient();
+
         await _semaphore.WaitAsync();
         try
         {
@@ -229,18 +233,44 @@ public class LocalLlmService : ILocalLlmService
             if (!resp.IsSuccessStatusCode) return results;
 
             var text = await ParseResponseTextAsync(resp.Content) ?? string.Empty;
-            var parts = text.Split(marker, StringSplitOptions.RemoveEmptyEntries).Select(p => p.Trim()).ToList();
-            if (parts.Count == 0)
+
+            try
             {
-                // fallback: split by newlines and try to parse lines that look like URL containing
-                var lines = Regex.Split(text.Trim(), "\n+").Select(p => p.Trim()).Where(p => p.Length > 0).ToList();
-                parts = lines;
+                _logger?.LogInformation("SearchWebAsync raw LLM response: {Response}", text.Length > 500 ? text.Substring(0, 500) + "..." : text);
+            }
+            catch { }
+
+            try
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(text);
+                if (doc.RootElement.ValueKind == System.Text.Json.JsonValueKind.Array)
+                {
+                    foreach (var item in doc.RootElement.EnumerateArray().Take(maxResults))
+                    {
+                        string title = string.Empty, url = string.Empty, snippet = string.Empty;
+                        if (item.TryGetProperty("title", out var t) && t.ValueKind == System.Text.Json.JsonValueKind.String) title = t.GetString() ?? string.Empty;
+                        if (item.TryGetProperty("url", out var u) && u.ValueKind == System.Text.Json.JsonValueKind.String) url = u.GetString() ?? string.Empty;
+                        if (item.TryGetProperty("summary", out var s) && s.ValueKind == System.Text.Json.JsonValueKind.String) snippet = s.GetString() ?? string.Empty;
+                        results.Add((title, url, snippet));
+                    }
+                    if (results.Count > 0)
+                    {
+                        _logger?.LogInformation("SearchWebAsync: JSON parsing successful, found {Count} results", results.Count);
+                        return results;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogDebug(ex, "SearchWebAsync: JSON parsing failed, falling back to heuristic parsing");
             }
 
+            // Heuristic parsing fallback
+            var parts = Regex.Split(text.Trim(), "\n\n+").Select(p => p.Trim()).Where(p => p.Length > 0).ToList();
             var urlRegex = new Regex(@"https?://[^\s]+", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
             foreach (var part in parts.Take(maxResults))
             {
-                // Try parse Title | URL | Snippet
                 var segments = part.Split('|').Select(s => s.Trim()).ToArray();
                 string title = string.Empty, url = string.Empty, snippet = string.Empty;
                 if (segments.Length >= 2)
@@ -251,7 +281,6 @@ public class LocalLlmService : ILocalLlmService
                 }
                 else
                 {
-                    // try extract URL from text and assign remainder as title/snippet
                     var m = urlRegex.Match(part);
                     if (m.Success)
                     {
@@ -266,6 +295,22 @@ public class LocalLlmService : ILocalLlmService
                 }
 
                 results.Add((title, url, snippet));
+            }
+
+            if (!results.Any(r => !string.IsNullOrWhiteSpace(r.Url)))
+            {
+                try
+                {
+                    var matches = urlRegex.Matches(text).Select(m => m.Value).Distinct().Take(maxResults).ToList();
+                    foreach (var u in matches)
+                    {
+                        results.Add((u, u, string.Empty));
+                    }
+                }
+                catch (Exception ex)
+                {
+                    try { _logger.LogDebug(ex, "SearchWebAsync: URL-extraction fallback failed"); } catch { }
+                }
             }
         }
         catch
@@ -300,8 +345,8 @@ public class LocalLlmService : ILocalLlmService
             }
 
             var payload = new { prompt = sb.ToString(), max_tokens = 50, plugin = new { type = "plugin", id = "greggg/web-search" } };
-
             var client = _httpFactory.CreateClient();
+
             await _semaphore.WaitAsync();
             try
             {
@@ -311,9 +356,10 @@ public class LocalLlmService : ILocalLlmService
                     results.AddRange(batch.Select(_ => (double?)null));
                     continue;
                 }
+
                 var text = await ParseResponseTextAsync(resp.Content) ?? string.Empty;
-                // Extract numbers in order
                 var nums = Regex.Matches(text, "[0-9]+(?:\\.[0-9]+)?").Select(m => m.Value).ToList();
+
                 if (nums.Count >= batch.Count)
                 {
                     for (int j = 0; j < batch.Count; j++)
@@ -327,7 +373,6 @@ public class LocalLlmService : ILocalLlmService
                 }
                 else
                 {
-                    // If parsing failed, add nulls for this batch
                     results.AddRange(batch.Select(_ => (double?)null));
                 }
             }
@@ -344,11 +389,6 @@ public class LocalLlmService : ILocalLlmService
         return results;
     }
 
-    private class LocalLlmResponse
-    {
-        public string? Text { get; set; }
-    }
-
     private async Task<string?> ParseResponseTextAsync(HttpContent content)
     {
         try
@@ -357,22 +397,19 @@ public class LocalLlmService : ILocalLlmService
             using var doc = await System.Text.Json.JsonDocument.ParseAsync(stream);
             var root = doc.RootElement;
 
-            // common shapes: { "text": "..." }
             if (root.TryGetProperty("text", out var t) && t.ValueKind == System.Text.Json.JsonValueKind.String)
                 return t.GetString();
 
-            // { "choices": [ { "text": "..." } ] }
             if (root.TryGetProperty("choices", out var choices) && choices.ValueKind == System.Text.Json.JsonValueKind.Array && choices.GetArrayLength() > 0)
             {
                 var first = choices[0];
                 if (first.TryGetProperty("text", out var chText) && chText.ValueKind == System.Text.Json.JsonValueKind.String)
                     return chText.GetString();
-                // chat style: choices[0].message.content
+
                 if (first.TryGetProperty("message", out var message) && message.TryGetProperty("content", out var contentProp) && contentProp.ValueKind == System.Text.Json.JsonValueKind.String)
                     return contentProp.GetString();
             }
 
-            // { "output": [ { "content": "..." } ] } or { "output": [ {"data":"..."} ] }
             if (root.TryGetProperty("output", out var output) && output.ValueKind == System.Text.Json.JsonValueKind.Array && output.GetArrayLength() > 0)
             {
                 var first = output[0];
@@ -382,7 +419,6 @@ public class LocalLlmService : ILocalLlmService
                     return od.GetString();
             }
 
-            // Try flat concatenation of all string properties
             var sb = new StringBuilder();
             CollectStrings(root, sb);
             var outText = sb.ToString().Trim();
