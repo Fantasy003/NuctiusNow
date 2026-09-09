@@ -1,0 +1,237 @@
+@page "/search"
+@rendermode InteractiveServer
+@using NuctiusNow.Services
+@inject UserSessionService sessionService
+@inject NavigationManager Navigation
+
+<PageTitle>Search News - NuctiusNow</PageTitle>
+
+<div class="search-page">
+
+    <!-- Search header -->
+    <div class="search-header">
+        <h1 class="search-heading">Search News</h1>
+        <p class="search-subheading">Find stories by keyword</p>
+    </div>
+
+    <!-- Search input bar -->
+    <div class="search-bar-container">
+        <div class="search-input-wrapper">
+            <svg class="search-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C8.01 14 6 11.99 6 9.5S8.01 5 10.5 5 15 7.01 15 9.5 12.99 14 10.5 14z" />
+            </svg>
+            <input 
+                type="text" 
+                class="search-input" 
+                placeholder="Search by keyword..."
+                @bind="searchQuery"
+                @bind:event="oninput"
+                @onkeyup="HandleSearchKeyUp"
+                maxlength="80"
+                aria-label="Search news" />
+            @if (!string.IsNullOrWhiteSpace(searchQuery))
+            {
+                <button class="search-clear" @onclick="ClearSearch" aria-label="Clear search">?</button>
+            }
+        </div>
+    </div>
+
+    <!-- Quick filter tags -->
+    <div class="filter-tags-container">
+        <button 
+            class="filter-tag @(selectedCategory == null ? "active" : "")"
+            @onclick="@(() => SelectCategory(null))">
+            All News
+        </button>
+        @foreach (var category in Categories)
+        {
+            <button 
+                class="filter-tag @(selectedCategory == category ? "active" : "")"
+                @onclick="@(() => SelectCategory(category))">
+                @category
+            </button>
+        }
+    </div>
+
+    <!-- Search results or placeholder -->
+    @if (isSearching)
+    {
+        <div class="search-loading">
+            <div class="loading-spinner"></div>
+            <p>Searching for news...</p>
+        </div>
+    }
+    else if (!string.IsNullOrWhiteSpace(searchQuery) && (searchResults == null || searchResults.Count == 0))
+    {
+        <div class="search-empty">
+            <svg viewBox="0 0 24 24" class="empty-icon" aria-hidden="true">
+                <path d="M15.5 1h-8C6.12 1 5 2.12 5 3.5v17C5 21.88 6.12 23 7.5 23h8c1.38 0 2.5-1.12 2.5-2.5v-17C18 2.12 16.88 1 15.5 1zm-4 21c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm4.5-4H7V4h9v14z" />
+            </svg>
+            <p>No news found for "<strong>@searchQuery</strong>"</p>
+            <p class="empty-hint">Try different keywords or browse by category</p>
+        </div>
+    }
+    else if (searchResults != null && searchResults.Count > 0)
+    {
+        <div class="search-results-container">
+            @foreach (var article in searchResults)
+            {
+                <div class="search-result-card">
+                    <div class="result-image" style="background-image: url('@article.ImageUrl');">
+                        <span class="result-category">@article.Category</span>
+                        <div class="result-overlay"></div>
+                    </div>
+                    <div class="result-content">
+                        <h3 class="result-title">@article.Title</h3>
+                        <p class="result-snippet">@article.Snippet</p>
+                        <div class="result-footer">
+                            <span class="result-date">@article.PublishedDate.ToString("MMM d, yyyy")</span>
+                            <a href="@article.Url" class="result-link" target="_blank" rel="noopener noreferrer">Read more ?</a>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+    else
+    {
+        <div class="search-placeholder">
+            <svg viewBox="0 0 24 24" class="placeholder-icon" aria-hidden="true">
+                <path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C8.01 14 6 11.99 6 9.5S8.01 5 10.5 5 15 7.01 15 9.5 12.99 14 10.5 14z" />
+            </svg>
+            <p>Start typing to search for news</p>
+        </div>
+    }
+
+    <!-- Mobile bottom navigation -->
+    <nav class="bottom-nav" role="navigation" aria-label="Bottom navigation">
+        <a href="/" class="bottom-nav-item">
+            <svg viewBox="0 0 24 24" class="bnav-icon" aria-hidden="true"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
+            <span>Home</span>
+        </a>
+        <a href="/just-for-you" class="bottom-nav-item">
+            <svg viewBox="0 0 24 24" class="bnav-icon" aria-hidden="true"><path d="M12 21.593c-5.63-5.539-11-10.297-11-14.402 0-3.791 3.068-5.191 5.281-5.191 1.312 0 4.151.501 5.719 4.457 1.59-3.968 4.464-4.447 5.726-4.447 2.54 0 5.274 1.621 5.274 5.181 0 4.069-5.136 8.625-11 14.402z"/></svg>
+            <span>For You</span>
+        </a>
+        <a href="/search" class="bottom-nav-item active">
+            <svg viewBox="0 0 24 24" class="bnav-icon" aria-hidden="true"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C8.01 14 6 11.99 6 9.5S8.01 5 10.5 5 15 7.01 15 9.5 12.99 14 10.5 14z" /></svg>
+            <span>Search</span>
+        </a>
+        <a href="/user-settings" class="bottom-nav-item">
+            <svg viewBox="0 0 24 24" class="bnav-icon" aria-hidden="true"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
+            <span>Settings</span>
+        </a>
+    </nav>
+
+</div>
+
+@code {
+    private string searchQuery = "";
+    private string? selectedCategory = null;
+    private bool isSearching = false;
+    private List<SearchResult>? searchResults;
+    private List<string> Categories = new()
+    {
+        "Technology", "Sports", "Politics", "Health", "Business", "Entertainment"
+    };
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+
+        await sessionService.InitializeAsync();
+        if (!sessionService.IsAuthenticated)
+        {
+            Navigation.NavigateTo("/login", true);
+        }
+    }
+
+    private async Task HandleSearchKeyUp(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await PerformSearch();
+        }
+    }
+
+    private async Task PerformSearch()
+    {
+        if (string.IsNullOrWhiteSpace(searchQuery))
+        {
+            searchResults = null;
+            return;
+        }
+
+        isSearching = true;
+        StateHasChanged();
+
+        // Simulate API call delay
+        await Task.Delay(600);
+
+        // Mock search results based on query
+        searchResults = GenerateMockResults(searchQuery, selectedCategory);
+        isSearching = false;
+        StateHasChanged();
+    }
+
+    private List<SearchResult> GenerateMockResults(string query, string? category)
+    {
+        var results = new List<SearchResult>
+        {
+            new SearchResult
+            {
+                Title = $"Latest updates on {query} innovation",
+                Snippet = $"Breaking news about recent developments in {query}. Industry experts weigh in on the impact and future prospects...",
+                Category = category ?? "Technology",
+                ImageUrl = "https://images.unsplash.com/photo-1518770660439-4636190af475?w=400&q=80",
+                Url = "https://example.com/article-1",
+                PublishedDate = DateTime.Now.AddHours(-2)
+            },
+            new SearchResult
+            {
+                Title = $"How {query} is changing the world",
+                Snippet = $"In-depth analysis of how {query} impacts society, economy, and culture. Expert opinions and forecasts included...",
+                Category = category ?? "Business",
+                ImageUrl = "https://images.unsplash.com/photo-1590283603385-17ffb3a7f29f?w=400&q=80",
+                Url = "https://example.com/article-2",
+                PublishedDate = DateTime.Now.AddHours(-4)
+            },
+            new SearchResult
+            {
+                Title = $"{query}: What you need to know today",
+                Snippet = $"A comprehensive guide to understanding {query}. Everything from basics to advanced topics covered...",
+                Category = category ?? "Entertainment",
+                ImageUrl = "https://images.unsplash.com/photo-1505751172876-fa1923c5c528?w=400&q=80",
+                Url = "https://example.com/article-3",
+                PublishedDate = DateTime.Now.AddDays(-1)
+            }
+        };
+
+        return results;
+    }
+
+    private void SelectCategory(string? category)
+    {
+        selectedCategory = category;
+        if (!string.IsNullOrWhiteSpace(searchQuery))
+        {
+            _ = PerformSearch();
+        }
+    }
+
+    private void ClearSearch()
+    {
+        searchQuery = "";
+        searchResults = null;
+    }
+
+    public class SearchResult
+    {
+        public string Title { get; set; } = "";
+        public string Snippet { get; set; } = "";
+        public string Category { get; set; } = "";
+        public string ImageUrl { get; set; } = "";
+        public string Url { get; set; } = "";
+        public DateTime PublishedDate { get; set; }
+    }
+}
