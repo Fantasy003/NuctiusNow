@@ -1,182 +1,225 @@
-﻿.detalle-page-container {
-    background-color: #111112;
-    color: #ffffff;
-    min-height: 100vh;
-    padding: 3rem 2rem;
-    font-family: Arial, sans-serif;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    box-sizing: border-box;
+/* ============================================================
+   NEWS DETAILS — Mobile-First Article Page
+   ============================================================ */
+
+/* ── Page Container ── */
+.detail-page-container {
+    min-height: calc(100vh - var(--nav-h));
+    background-color: var(--bg-page);
+    color: var(--text-primary);
+    font-family: var(--font-ui);
+    padding: 0 0 5rem 0;
 }
 
+/* ── Back navigation ── */
 .back-nav {
-    width: 100%;
-    max-width: 800px;
-    margin-bottom: 1.5rem;
+    padding: 1rem var(--page-px);
+    border-bottom: 1px solid var(--border);
 }
 
 .btn-back {
-    color: #3b82f6;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    font-weight: 500;
     text-decoration: none;
-    font-weight: bold;
-    font-size: 0.95rem;
+    padding: 0.4rem 0.75rem;
+    border-radius: var(--radius-pill);
+    transition: color 0.15s, background-color 0.15s;
+    margin-left: -0.5rem;
 }
 
-    .btn-back:hover {
-        text-decoration: underline;
-    }
-
-.detalle-card {
-    background-color: #18191b;
-    border: 1px solid #232427;
-    border-radius: 24px;
-    padding: 2.5rem;
-    width: 100%;
-    max-width: 800px;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+.btn-back:hover {
+    color: var(--text-primary);
+    background-color: var(--bg-card);
+    text-decoration: none;
 }
 
+/* ── Article card ── */
+.detail-card {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 0 var(--page-px) 2rem;
+}
+
+/* ── Meta info (category + article ID) ── */
 .meta-info {
     display: flex;
-    justify-content: space-between;
-    color: #88888d;
-    font-size: 0.9rem;
-    margin-bottom: 1rem;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 1.25rem 0 0.75rem;
+    flex-wrap: wrap;
 }
 
-.categoria {
-    font-weight: bold;
-    color: #3b82f6;
+.category {
+    background-color: var(--accent);
+    color: #fff;
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 0.25rem 0.65rem;
+    border-radius: var(--radius-pill);
 }
 
-.noticia-id {
+.news-id {
+    font-size: 0.75rem;
+    color: var(--text-muted);
     font-family: monospace;
 }
 
-.detalle-title {
-    font-size: 2.2rem;
-    margin-top: 0;
+/* ── Article Title ── */
+.detail-title {
+    font-family: var(--font-editorial);
+    font-size: clamp(1.6rem, 5vw, 2.4rem);
+    font-weight: 700;
+    line-height: 1.2;
+    letter-spacing: -0.02em;
+    color: var(--text-primary);
+    margin: 0 0 1.5rem;
+}
+
+/* ── Content layout ── */
+.detail-content-layout {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
     margin-bottom: 2rem;
 }
 
-.detalle-content-layout {
-    display: flex;
-    flex-direction: column;
-    gap: 2rem;
-    margin-bottom: 2.5rem; /* Margen para separar el cuerpo de la barra de acciones */
-}
-
-.detalle-img {
+/* ── Hero image ── */
+.detail-img {
     width: 100%;
-    max-height: 380px;
+    max-height: 360px;
     object-fit: cover;
-    border-radius: 16px;
+    border-radius: var(--radius-md);
+    display: block;
 }
 
-.detalle-text h3 {
-    color: #ffffff;
-    border-bottom: 1px solid #232427;
+/* ── Text body ── */
+.detail-text h3 {
+    font-family: var(--font-editorial);
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    border-bottom: 1px solid var(--border);
     padding-bottom: 0.5rem;
-    margin-top: 1.5rem;
+    margin: 1.5rem 0 0.75rem;
 }
 
-.body-destacado {
-    color: #b3b3b3;
-    line-height: 1.6;
-    text-align: justify;
-    word-break: break-all;
+.body-featured {
+    font-size: 1rem;
+    line-height: 1.8;
+    color: var(--text-secondary);
     font-style: italic;
+    word-break: break-word;
 }
 
-.detalle-text p {
-    color: #cccccc;
-    line-height: 1.6;
-    text-align: justify;
+.detail-text p {
+    font-size: 1rem;
+    line-height: 1.8;
+    color: var(--text-secondary);
+    margin-bottom: 1rem;
 }
 
-/* =======================================================
-   ESTILOS DE LA BARRA DE ACCIONES MEJORADA
-   ======================================================= */
+/* ── Actions Bar ── */
 .article-actions-bar {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    border-top: 1px solid #232427;
-    padding-top: 1.5rem;
-    margin-top: 1rem;
+    border-top: 1px solid var(--border);
+    padding-top: 1.25rem;
+    margin-top: 0.5rem;
+    flex-wrap: wrap;
+    gap: 0.75rem;
 }
 
+/* Like/dislike capsule */
 .reactions-group {
     display: flex;
-    background-color: #202124; /* Fondo tipo cápsula unificado */
-    border-radius: 50px;
-    padding: 0.25rem;
-    border: 1px solid rgba(255, 255, 255, 0.05);
+    background-color: var(--bg-card);
+    border-radius: var(--radius-pill);
+    padding: 0.2rem;
+    border: 1px solid var(--border);
 }
 
 .btn-action {
     background: transparent;
     border: none;
-    color: #ffffff;
-    padding: 0.6rem 1.2rem;
-    font-size: 0.95rem;
-    font-weight: bold;
+    color: var(--text-primary);
+    padding: 0.55rem 1rem;
+    font-size: 0.9rem;
+    font-weight: 600;
     cursor: pointer;
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    border-radius: 50px;
-    transition: all 0.2s ease;
+    gap: 0.4rem;
+    border-radius: var(--radius-pill);
+    transition: background-color 0.15s, color 0.15s;
+    min-height: 40px;
 }
 
-/* División visual sutil entre Like y Dislike dentro de su cápsula */
+.btn-action:hover {
+    background-color: var(--bg-input);
+}
+
 .btn-like {
-    border-top-right-radius: 0;
-    border-bottom-right-radius: 0;
-    border-right: 1px solid #2d2e31;
+    border-radius: var(--radius-pill) 0 0 var(--radius-pill);
+    border-right: 1px solid var(--border);
+    padding-right: 0.85rem;
 }
 
 .btn-dislike {
-    border-top-left-radius: 0;
-    border-bottom-left-radius: 0;
-    padding-left: 1rem;
-    padding-right: 1rem;
+    border-radius: 0 var(--radius-pill) var(--radius-pill) 0;
+    padding-left: 0.85rem;
 }
 
-/* Botón Share separado con su propio fondo estilo cápsula */
 .btn-share {
-    background-color: #202124;
-    border: 1px solid rgba(255, 255, 255, 0.05);
-}
-
-/* Efectos Hover Generales */
-.btn-action:hover {
-    background-color: rgba(255, 255, 255, 0.08);
+    background-color: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-pill);
+    min-height: 40px;
 }
 
 .btn-share:hover {
-    background-color: #2d3035;
-    color: #3b82f6; /* Cambio a azul al pasar el mouse */
-    border-color: rgba(59, 130, 246, 0.3);
+    background-color: var(--accent-glow);
+    color: var(--accent);
+    border-color: var(--accent);
 }
 
-/* Estados Activos (Presionados) */
+/* Active states */
 .active-like {
-    color: #3b82f6 !important;
-    background-color: rgba(59, 130, 246, 0.15) !important;
+    color: var(--accent) !important;
+    background-color: var(--accent-glow) !important;
 }
 
 .active-dislike {
-    color: #ef4444 !important;
-    background-color: rgba(239, 68, 68, 0.15) !important;
+    color: var(--text-secondary) !important;
+    background-color: var(--bg-input) !important;
 }
 
 .action-icon {
-    font-size: 1.1rem;
+    font-size: 1rem;
 }
 
 .action-count {
-    font-size: 0.9rem;
-    color: #e2e8f0;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+/* ── Desktop ── */
+@media (min-width: 768px) {
+    .detail-card {
+        padding: 0 2rem 3rem;
+    }
+
+    .detail-img {
+        max-height: 450px;
+    }
+
+    .detail-content-layout {
+        gap: 2rem;
+    }
 }

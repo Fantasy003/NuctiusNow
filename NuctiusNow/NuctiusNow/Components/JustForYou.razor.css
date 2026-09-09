@@ -1,365 +1,321 @@
-﻿/* =======================================================
-   CONTENEDOR PRINCIPAL DARK Y WRAPPER
-   ======================================================= */
+/* ============================================================
+   JUST FOR YOU — Mobile-First Vertical News Feed
+   ============================================================ */
+
+/* ── Page Container ── */
 .jfy-page-container {
-    background-color: #111112;
-    color: #ffffff;
-    min-height: 100vh;
-    padding: 2rem 2rem 18rem 2rem;
+    min-height: calc(100vh - var(--nav-h));
+    padding: 0 0 calc(var(--bottom-nav-h) + 16px) 0;
+    background-color: var(--bg-page);
+    color: var(--text-primary);
+    font-family: var(--font-ui);
+}
+
+/* ── Wrapper ── */
+.jfy-wrapper {
+    width: 100%;
+    max-width: 680px;
+    margin: 0 auto;
+    padding: 1.5rem var(--page-px) 0;
+}
+
+/* ── Section heading ── */
+.jfy-wrapper::before {
+    content: "Just For You";
+    display: block;
+    font-family: var(--font-editorial);
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 1.25rem;
+}
+
+/* ── News Feed Grid ── */
+.jfy-grid {
     display: flex;
     flex-direction: column;
-    align-items: center;
-    font-family: Arial, Helvetica, sans-serif;
-    box-sizing: border-box;
+    gap: 0;
 }
 
-.jfy-wrapper {
-    position: relative;
-    width: 100%;
-    max-width: 1100px;
-}
-
-/* Grid simétrico de 2 columnas */
-.jfy-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 4rem 6rem;
-}
-
-/* =======================================================
-   ENRUTADOR DE LA CAJA (CORREGIDO: Cero subrayados ni azul)
-   ======================================================= */
+/* ── News Box Link wrapper ── */
 .news-box-link,
 .news-box-link:hover,
 .news-box-link:focus,
 .news-box-link:active,
 .news-box-link:visited {
     text-decoration: none !important;
-    outline: none !important;
-    color: #ffffff !important; /* Fuerza a mantener tu color blanco base */
+    color: var(--text-primary) !important;
     display: block;
 }
 
-    /* =======================================================
-   ASIGNACIÓN DE DIRECCIÓN DE EXPANSIÓN SIMÉTRICA
-   ======================================================= */
-
-    /* COLUMNA IZQUIERDA (Noticias impares: 1 y 3) -> Se expanden hacia la IZQUIERDA */
-    .news-box-link:nth-child(odd) .news-box {
-        transform-origin: right center;
-    }
-
-    .news-box-link:nth-child(odd) .news-content-flex {
-        flex-direction: row-reverse;
-    }
-
-    /* COLUMNA DERECHA (Noticias pares: 2 y 4) -> Se expanden hacia la DERECHA */
-    .news-box-link:nth-child(even) .news-box {
-        transform-origin: left center;
-    }
-
-    .news-box-link:nth-child(even) .news-content-flex {
-        flex-direction: row;
-    }
-
-/* =======================================================
-   ESTILO BASE DE LAS TARJETAS DE NOTICIAS
-   ======================================================= */
+/* ── News Card ── */
 .news-box {
-    background-color: #18191b;
-    border: 1px solid #232427;
-    border-radius: 40px;
-    padding: 2rem 2.5rem;
+    background-color: var(--bg-page);
+    border-bottom: 1px solid var(--border);
+    padding: 1.25rem 0;
     display: flex;
     flex-direction: column;
+    gap: 0;
     position: relative;
-    min-height: 250px;
-    /* Usamos transiciones limpias controlando que el layout no mute de tamaño físico */
-    transition: transform 0.3s cubic-bezier(0.25, 1, 0.5, 1), border-color 0.3s ease;
-    box-sizing: border-box;
+    transition: background-color 0.15s ease;
 }
 
-/* EFECTO HOVER: Escala la tarjeta en base a su transform-origin asignado */
 .news-box-link:hover .news-box {
-    transform: scale(1.06);
-    border-color: #3b82f6; /* Borde reactivo azul sutil en la caja, no en el texto */
-    z-index: 5;
+    background-color: var(--bg-card);
 }
 
-/* Contenedor interno flexible para texto e imagen */
-.news-content-flex {
-    display: flex;
-    gap: 0px;
-    transition: gap 0.3s ease;
-    margin-top: 0.5rem;
-}
-
-.news-box-link:hover .news-content-flex {
-    gap: 1.5rem;
-}
-
-.news-text-side {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-}
-
-/* =======================================================
-   COLUMNA DE IMAGEN ANIMADA (Efecto de aparición lateral)
-   ======================================================= */
-.news-image-side {
-    width: 0;
-    opacity: 0;
+/* ── Hero Media ── */
+.card-media {
+    position: relative;
+    width: 100%;
+    padding-top: 56.25%; /* 16:9 ratio */
+    background-size: cover;
+    background-position: center;
+    background-color: var(--bg-card);
+    border-radius: var(--radius-md);
     overflow: hidden;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: width 0.35s cubic-bezier(0.25, 1, 0.5, 1), opacity 0.25s ease;
+    margin-bottom: 0.75rem;
 }
 
-    .news-image-side img {
-        width: 120px;
-        height: 120px;
-        object-fit: cover;
-        border-radius: 20px;
-        border: 1px solid #333336;
-    }
-
-/* Al hacer hover sobre el NavLink, expande la sección de la imagen */
-.news-box-link:hover .news-image-side {
-    width: 130px;
-    opacity: 1;
-}
-
-/* Elementos internos de la noticia */
+/* ── Category Tag (on image) ── */
 .category-tag {
     position: absolute;
-    top: 1.5rem;
-    right: 2.5rem;
-    font-size: 0.85rem;
-    color: #88888d;
-    font-weight: 500;
+    top: 0.75rem;
+    left: 0.75rem;
+    background-color: var(--accent);
+    color: #fff;
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 0.25rem 0.6rem;
+    border-radius: var(--radius-pill);
+    z-index: 2;
 }
 
-.news-title {
-    font-size: 1.25rem;
-    font-weight: bold;
-    margin-top: 1rem;
-    margin-bottom: 0.5rem;
-    color: #ffffff !important;
-}
-
-.summary-label {
-    font-size: 0.75rem;
-    font-weight: bold;
-    letter-spacing: 1px;
-    color: #66666a;
-    text-align: center;
-    margin-bottom: 0.5rem;
-}
-
-.news-body {
-    font-size: 0.8rem;
-    line-height: 1.5;
-    color: #b3b3b3;
-    text-align: justify;
-    margin: 0;
-    word-break: break-all;
-}
-
-/* =======================================================
-   EJE CENTRAL: REFRESH NEWS (ANCLADO AL CENTRO REAL)
-   ======================================================= */
-.center-refresh-zone {
+/* ── Action buttons (like/share) on image ── */
+.action-column {
     position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    z-index: 10;
-    width: 80px; /* Le asignamos un tamaño fijo al contenedor para que no altere el layout */
-    height: 100px;
+    bottom: 0.75rem;
+    right: 0.75rem;
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    z-index: 2;
+}
+
+.action-btn {
+    width: 36px;
+    height: 36px;
+    background: rgba(0, 0, 0, 0.55);
+    backdrop-filter: blur(4px);
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: #fff;
+    font-size: 14px;
     display: flex;
     justify-content: center;
     align-items: center;
+    cursor: pointer;
+    transition: background 0.15s, transform 0.15s;
+}
+
+.action-btn:hover {
+    background: rgba(230, 57, 70, 0.7);
+    transform: scale(1.08);
+}
+
+/* ── Card Body ── */
+.card-body {
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+/* ── News Title ── */
+.news-title {
+    font-family: var(--font-editorial);
+    font-size: 1.1rem;
+    font-weight: 700;
+    line-height: 1.35;
+    color: var(--text-primary) !important;
+    margin: 0;
+    letter-spacing: -0.01em;
+}
+
+/* ── News Body / Excerpt ── */
+.news-body {
+    font-size: 0.875rem;
+    line-height: 1.6;
+    color: var(--text-secondary);
+    margin: 0;
+    /* Clamp to 3 lines */
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    word-break: break-word;
+}
+
+/* ── Refresh FAB ── */
+.center-refresh-zone {
+    position: fixed;
+    bottom: calc(var(--bottom-nav-h) + 20px);
+    right: 1.25rem;
+    z-index: 160;
 }
 
 .btn-refresh {
-    background: transparent;
+    width: 52px;
+    height: 52px;
+    background-color: var(--accent);
     border: none;
-    cursor: pointer;
+    border-radius: 50%;
     display: flex;
     flex-direction: column;
     align-items: center;
-    position: absolute; /* Queda completamente aislado de las mutaciones de las cajas vecinas */
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 4px 16px rgba(230, 57, 70, 0.45);
+    transition: transform 0.2s var(--ease-out), box-shadow 0.2s;
 }
 
-.refresh-text-top, .refresh-text-bottom {
-    font-size: 0.9rem;
-    font-weight: bold;
-    color: #ffffff;
+.btn-refresh:hover {
+    transform: scale(1.08);
+    box-shadow: 0 6px 22px rgba(230, 57, 70, 0.55);
+}
+
+.btn-refresh:active {
+    transform: scale(0.96);
+}
+
+.refresh-text-top,
+.refresh-text-bottom {
+    display: none; /* hidden, icon only */
 }
 
 .refresh-icon-circle {
-    width: 50px;
-    height: 50px;
-    background-color: #111112;
-    border: 3px solid #ffffff;
-    border-radius: 50%;
     display: flex;
-    justify-content: center;
     align-items: center;
-    margin: 0.3rem 0;
+    justify-content: center;
 }
 
 .sync-icon {
-    width: 32px;
-    height: 32px;
+    width: 24px;
+    height: 24px;
     fill: #ffffff;
 }
 
-/* =======================================================
-   MENÚ FLOTANTE CON EFECTO HOVER
-   ======================================================= */
-.floating-menu-container {
+/* ── Bottom Navigation (shared with Home) ── */
+.bottom-nav {
     position: fixed;
-    bottom: 0;
+    bottom: 10px;
     left: 50%;
-    transform: translateX(-50%) translateY(calc(100% - 42px));
-    z-index: 100;
-    transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-    .floating-menu-container:hover {
-        transform: translateX(-50%) translateY(0);
-    }
-
-.floating-menu-card {
-    background-color: #1e1e24;
-    border: 2px solid black;
-    border-radius: 16px 16px 0 0;
-    width: 480px;
-    box-shadow: 0 -10px 25px -5px rgba(0, 0, 0, 0.7);
+    transform: translateX(-50%);
+    width: calc(100% - 2rem);
+    max-width: 500px;
+    height: 58px;
+    background: rgba(18, 18, 18, 0.96);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-radius: var(--radius-pill);
+    border: 1px solid var(--border-light);
     display: flex;
-    flex-direction: column;
-    overflow: hidden;
+    justify-content: space-around;
+    align-items: center;
+    padding: 0 0.5rem;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+    z-index: 150;
 }
 
-.menu-tab {
-    background-color: white;
-    color: black;
-    text-align: center;
-    padding: 0.5rem;
-    font-size: 24px;
-    font-weight: bold;
-    font-family: 'Sans Serif Collection', Arial, sans-serif;
-    cursor: pointer;
-    order: -1;
-}
-
-.menu-content {
-    display: flex;
-    gap: 1.5rem;
-    padding: 1.5rem;
-    background-color: whitesmoke;
-}
-
-.menu-actions {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-}
-
-.menu-btn {
-    background-color: ghostwhite;
-    border: 1px solid #2d2d34;
-    color: black;
-    padding: 0.6rem 1rem;
-    border-radius: 8px;
-    text-align: left;
-    font-size: 0.85rem;
-    font-family: 'Sans Serif Collection', Arial, sans-serif;
-    cursor: pointer;
-    width: 100%;
-    transition: background-color 0.2s;
-}
-
-    .menu-btn:hover {
-        background-color: #2d2d34;
-        color: #ffffff;
-    }
-
-.menu-btn-active {
-    border-color: #ef4444 !important;
-    color: #ef4444 !important;
-    font-weight: bold;
-}
-
-.premium-box {
-    width: 160px;
-    border: 1px solid #2d2d34;
-    border-radius: 10px;
-    padding: 1rem;
+.bottom-nav-item {
     display: flex;
     flex-direction: column;
     align-items: center;
+    gap: 3px;
+    padding: 0.5rem 1rem;
+    min-width: 48px;
+    min-height: 48px;
+    border-radius: var(--radius-pill);
+    color: var(--text-muted);
+    text-decoration: none;
+    font-size: 0.65rem;
+    font-weight: 500;
+    letter-spacing: 0.03em;
+    transition: color 0.15s ease, background-color 0.15s ease;
     justify-content: center;
-    background-color: darkgoldenrod;
 }
 
-    .premium-box h4 {
-        margin: 0 0 0.75rem 0;
-        font-size: 0.75rem;
-        font-family: "Sans Serif Collection", Arial, sans-serif;
-        color: black;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
+    .bottom-nav-item:hover,
+    .bottom-nav-item.active {
+        color: var(--accent);
+        text-decoration: none;
     }
 
-.status-badge {
-    font-weight: bold;
+.bnav-icon {
+    width: 22px;
+    height: 22px;
+    fill: currentColor;
+    flex-shrink: 0;
+}
+
+/* ── Floating menu (hidden — replaced by top nav) ── */
+.floating-menu-container {
+    display: none !important;
+}
+
+/* ── Diagnostic panel ── */
+.diagnostic-panel {
+    background-color: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 1rem;
+    margin: 1rem var(--page-px);
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.diagnostic-panel h3 {
+    color: var(--text-primary);
     font-size: 0.9rem;
-    padding: 0.4rem 0.8rem;
-    border-radius: 6px;
-    width: 100%;
-    text-align: center;
-    box-sizing: border-box;
+    margin-bottom: 0.75rem;
 }
 
-    .status-badge.active {
-        background-color: #064e3b;
-        color: #34d399;
+/* ── Tablet ── */
+@media (min-width: 600px) {
+    .jfy-wrapper {
+        padding: 2rem 1.5rem 0;
     }
 
-    .status-badge.inactive {
-        background-color: #7f1d1d;
-        color: #fca5a5;
+    .news-title {
+        font-size: 1.2rem;
     }
 
-/* =======================================================
-   RESPONSIVE DESIGN (MOBILE ADAPTATION)
-   ======================================================= */
-@media (max-width: 768px) {
-    .jfy-grid {
-        grid-template-columns: 1fr;
-        gap: 2rem;
+    .jfy-wrapper::before {
+        font-size: 2rem;
+    }
+}
+
+/* ── Desktop ── */
+@media (min-width: 900px) {
+    .jfy-page-container {
+        padding-bottom: 2rem;
     }
 
-    .news-box-link:hover .news-image-side {
-        width: 0;
-        opacity: 0;
+    .bottom-nav {
+        display: none;
     }
 
-    .news-box-link:hover .news-content-flex {
-        gap: 0;
+    .center-refresh-zone {
+        bottom: 2rem;
+        right: 2rem;
     }
 
-    .news-box-link:nth-child(odd) .news-box,
-    .news-box-link:nth-child(even) .news-box {
-        transform-origin: center center;
-    }
-
-    .floating-menu-card {
-        width: 90vw;
+    .jfy-wrapper {
+        max-width: 720px;
+        padding: 2.5rem 0 0;
     }
 }

@@ -1,0 +1,20 @@
+/* ============================================================
+   MAIN LAYOUT — Shell styles
+   Scoped to MainLayout.razor
+   ============================================================ */
+
+.app-shell {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+    background-color: var(--bg-page);
+    color: var(--text-primary);
+    transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+.page-body {
+    flex: 1;
+    width: 100%;
+    /* Reserve space for the sticky top nav */
+    padding-top: var(--nav-h);
+}

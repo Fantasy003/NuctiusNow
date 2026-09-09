@@ -1,250 +1,226 @@
-﻿/* =======================================================
-   CONTENEDOR PRINCIPAL: ROMPE EL LAYOUT Y SE CLAVA A LA PANTALLA
-   ======================================================= */
-.home-page-container {
-    position: fixed; /* Ignora contenedores y márgenes externos del MainLayout */
-    top: 0;
-    left: 0;
-    width: 100vw; /* Ocupa el 100% real del ancho del navegador */
-    height: 100vh; /* Ocupa el 100% real del alto del navegador */
-    background-color: #111112; /* Gris ultra oscuro de base */
-    color: #ffffff;
-    padding: 1.5rem 1.5rem 6rem 1.5rem; /* Espacio inferior reservado para el menú flotante */
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
-    box-sizing: border-box;
-    overflow: hidden; /* Elimina barras de scroll rebeldes */
-    z-index: 10; /* Asegura superponerse a cualquier fondo previo */
+/* ============================================================
+   HOME PAGE — Mobile-First Category Grid
+   ============================================================ */
+
+.home-page {
+    min-height: calc(100vh - var(--nav-h));
+    padding: 0 0 calc(var(--bottom-nav-h) + 16px) 0;
+    background-color: var(--bg-page);
 }
 
-.home-wrapper {
-    position: relative;
-    width: 100%;
-    height: 100%;
+/* ── Page Header ── */
+.home-header {
+    padding: 1.5rem var(--page-px) 0.75rem;
+    border-bottom: 1px solid var(--border);
 }
 
-/* =======================================================
-   GRID DE CATEGORÍAS (Malla elástica total)
-   ======================================================= */
+.home-heading {
+    font-family: var(--font-editorial);
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    line-height: 1.2;
+}
+
+.home-subheading {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    margin-top: 0.2rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+/* ── Category Grid ── */
 .categories-grid {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    grid-template-rows: repeat(3, 1fr); /* Divide el alto disponible en 3 filas perfectas */
-    gap: 1.25rem; /* Separación fluida entre celdas */
-    width: 100%;
-    height: 100%;
+    /* Mobile: 1 column */
+    grid-template-columns: 1fr;
+    gap: 1px;
+    background-color: var(--border);
+    /* No gap lines needed — cards touch border */
 }
 
-/* Forzar a los enlaces a estirarse por completo en su celda */
-.category-card-link,
-.category-card-link:hover,
-.category-card-link:focus,
-.category-card-link:visited {
-    text-decoration: none !important;
-    color: inherit !important;
+/* ── Card Link wrapper ── */
+.category-card-link {
     display: block;
-    width: 100%;
-    height: 100%;
+    text-decoration: none;
+    color: inherit;
+    background-color: var(--bg-page);
 }
 
-/* Tarjetas 100% elásticas con imagen de fondo */
+.category-card-link:hover {
+    text-decoration: none;
+    color: inherit;
+}
+
+/* ── Card ── */
 .category-card {
     position: relative;
     width: 100%;
-    height: 100%;
+    height: 200px;
     background-size: cover;
     background-position: center;
     background-repeat: no-repeat;
-    border-radius: 20px; /* Esquinas suavizadas premium */
     overflow: hidden;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    border: 1px solid rgba(255, 255, 255, 0.05);
-    transition: transform 0.3s cubic-bezier(0.25, 1, 0.5, 1), border-color 0.3s ease;
-    cursor: pointer;
+    transition: transform 0.3s var(--ease-out);
 }
 
-/* Capa oscura (Overlay) nativa para legibilidad del texto */
+/* Gradient overlay — bottom-to-top */
 .card-overlay {
     position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background-color: rgba(0, 0, 0, 0.65); /* Filtro cinemático oscuro */
-    transition: background-color 0.3s ease;
-    z-index: 1;
+    inset: 0;
+    background: linear-gradient(
+        to top,
+        rgba(0, 0, 0, 0.82) 0%,
+        rgba(0, 0, 0, 0.35) 55%,
+        rgba(0, 0, 0, 0.05) 100%
+    );
+    transition: background 0.3s ease;
 }
 
-/* Títulos de categorías centrados */
-.category-title {
-    position: relative;
+/* Card content — bottom-left */
+.card-content {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 1rem;
     z-index: 2;
-    font-family: "Times New Roman", Times, serif; /* Estilo clásico/formal */
-    font-size: 1.4rem;
-    font-weight: bold;
-    letter-spacing: 2px;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+}
+
+.category-tag-pill {
+    display: inline-block;
+    background-color: var(--accent);
+    color: #fff;
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 0.2rem 0.55rem;
+    border-radius: var(--radius-pill);
+    align-self: flex-start;
+}
+
+.category-title {
+    font-family: var(--font-editorial);
+    font-size: 1.35rem;
+    font-weight: 700;
+    letter-spacing: 0.01em;
     color: #ffffff;
     margin: 0;
-    text-shadow: 0 4px 12px rgba(0, 0, 0, 0.9);
-    transition: letter-spacing 0.3s ease;
+    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8);
+    line-height: 1.2;
 }
 
-/* =======================================================
-   COMPORTAMIENTO INTERACTIVO HOVER
-   ======================================================= */
+/* ── Hover interactions ── */
 .category-card-link:hover .category-card {
-    transform: scale(1.02);
-    border-color: #3b82f6; /* Sutil destello azul reactivo */
+    transform: scale(1.015);
 }
 
 .category-card-link:hover .card-overlay {
-    background-color: rgba(0, 0, 0, 0.45); /* Aclara la imagen al enfocar */
+    background: linear-gradient(
+        to top,
+        rgba(0, 0, 0, 0.9) 0%,
+        rgba(0, 0, 0, 0.5) 60%,
+        rgba(0, 0, 0, 0.1) 100%
+    );
 }
 
-.category-card-link:hover .category-title {
-    letter-spacing: 4px; /* Pequeña expansión tipográfica dinámica */
-}
-
-/* =======================================================
-   MENÚ FLOTANTE INFERIOR INTERACTIVO
-   ======================================================= */
-.floating-menu-container {
+/* ── Bottom Navigation ── */
+.bottom-nav {
     position: fixed;
-    bottom: 0;
+    bottom: 10px;
     left: 50%;
-    transform: translateX(-50%) translateY(calc(100% - 42px));
-    z-index: 100; /* Siempre por encima del grid absoluto */
-    transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-    .floating-menu-container:hover {
-        transform: translateX(-50%) translateY(0);
-    }
-
-.floating-menu-card {
-    background-color: #1e1e24;
-    border: 2px solid black;
-    border-radius: 16px 16px 0 0;
-    width: 480px;
-    box-shadow: 0 -10px 25px -5px rgba(0, 0, 0, 0.7);
+    transform: translateX(-50%);
+    width: calc(100% - 2rem);
+    max-width: 500px;
+    height: 58px;
+    background: rgba(18, 18, 18, 0.96);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-radius: var(--radius-pill);
+    border: 1px solid var(--border-light);
     display: flex;
-    flex-direction: column;
-    overflow: hidden;
+    justify-content: space-around;
+    align-items: center;
+    padding: 0 0.5rem;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+    z-index: 150;
 }
 
-.menu-tab {
-    background-color: white;
-    color: black;
-    text-align: center;
-    padding: 0.5rem;
-    font-size: 24px;
-    font-weight: bold;
-    font-family: 'Sans Serif Collection', Arial, sans-serif;
-    cursor: pointer;
-    order: -1;
-}
-
-.menu-content {
-    display: flex;
-    gap: 1.5rem;
-    padding: 1.5rem;
-    background-color: whitesmoke;
-}
-
-.menu-actions {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-}
-
-.menu-btn {
-    background-color: ghostwhite;
-    border: 1px solid #2d2d34;
-    color: black;
-    padding: 0.6rem 1rem;
-    border-radius: 8px;
-    text-align: left;
-    font-size: 0.85rem;
-    font-family: 'Sans Serif Collection', Arial, sans-serif;
-    cursor: pointer;
-    width: 100%;
-    transition: background-color 0.2s;
-}
-
-    .menu-btn:hover {
-        background-color: #2d2d34;
-        color: #ffffff;
-    }
-
-.menu-btn-active {
-    border-color: #ef4444 !important;
-    color: #ef4444 !important;
-    font-weight: bold;
-}
-
-.premium-box {
-    width: 160px;
-    border: 1px solid #2d2d34;
-    border-radius: 10px;
-    padding: 1rem;
+.bottom-nav-item {
     display: flex;
     flex-direction: column;
     align-items: center;
+    gap: 3px;
+    padding: 0.5rem 1rem;
+    min-width: 48px;
+    min-height: 48px;
+    border-radius: var(--radius-pill);
+    color: var(--text-muted);
+    text-decoration: none;
+    font-size: 0.65rem;
+    font-weight: 500;
+    letter-spacing: 0.03em;
+    transition: color 0.15s ease, background-color 0.15s ease;
     justify-content: center;
-    background-color: darkgoldenrod;
 }
 
-    .premium-box h4 {
-        margin: 0 0 0.75rem 0;
-        font-size: 0.75rem;
-        font-family: "Sans Serif Collection", Arial, sans-serif;
-        color: black;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-    }
-
-.status-badge {
-    font-weight: bold;
-    font-size: 0.9rem;
-    padding: 0.4rem 0.8rem;
-    border-radius: 6px;
-    width: 100%;
-    text-align: center;
-    box-sizing: border-box;
+.bottom-nav-item:hover,
+.bottom-nav-item.active {
+    color: var(--accent);
+    text-decoration: none;
 }
 
-    .status-badge.active {
-        background-color: #064e3b;
-        color: #34d399;
-    }
+.bnav-icon {
+    width: 22px;
+    height: 22px;
+    fill: currentColor;
+    flex-shrink: 0;
+}
 
-    .status-badge.inactive {
-        background-color: #7f1d1d;
-        color: #fca5a5;
-    }
-
-/* =======================================================
-   RESPONSIVE DESIGN (Reorganización de filas dinámicas)
-   ======================================================= */
-@media (max-width: 900px) {
+/* ── Tablet: 2 columns ── */
+@media (min-width: 600px) {
     .categories-grid {
         grid-template-columns: repeat(2, 1fr);
-        grid-template-rows: repeat(5, 1fr); /* Redistribuye el alto para mantener la pantalla llena */
+    }
+
+    .category-card {
+        height: 240px;
+    }
+
+    .home-header {
+        padding: 2rem 1.5rem 1rem;
+    }
+
+    .home-heading {
+        font-size: 2rem;
     }
 }
 
-@media (max-width: 600px) {
+/* ── Desktop: 3 columns, hide bottom nav ── */
+@media (min-width: 900px) {
     .categories-grid {
-        grid-template-columns: 1fr;
-        grid-template-rows: repeat(9, 1fr); /* 9 filas exactas para cubrir el alto mobile al 100% */
+        grid-template-columns: repeat(3, 1fr);
     }
 
-    .floating-menu-card {
-        width: 92vw;
+    .category-card {
+        height: calc((100vh - var(--nav-h)) / 3);
+        min-height: 200px;
+    }
+
+    .home-page {
+        padding-bottom: 0;
+    }
+
+    .bottom-nav {
+        display: none;
+    }
+
+    .home-header {
+        padding: 2.5rem 2rem 1.25rem;
     }
 }

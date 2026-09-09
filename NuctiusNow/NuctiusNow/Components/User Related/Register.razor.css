@@ -1,231 +1,245 @@
-﻿/* =======================================================
-   CONTENEDOR PRINCIPAL CON IMAGEN Y FILTRO PROFESIONAL
-   ======================================================= */
+/* ============================================================
+   REGISTER PAGE — Mobile-First Glassmorphism
+   ============================================================ */
+
 .register-page-container {
     min-height: 100vh;
     width: 100%;
     display: flex;
+    flex-direction: column;
     justify-content: center;
     align-items: center;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    margin: 0;
-    padding: 3rem 1rem;
+    gap: 1.5rem;
+    font-family: var(--font-ui);
+    padding: 2rem 1rem;
     box-sizing: border-box;
     background-color: #0c0d0e;
-    /* Gradiente oscuro superior para asegurar contraste premium */
-    background-image: linear-gradient(135deg, rgba(10, 11, 14, 0.8) 0%, rgba(19, 28, 41, 0.8) 100%), url('/Background/bgRegisterJP.jpeg');
+    background-image:
+        linear-gradient(160deg, rgba(10,11,14,0.88) 0%, rgba(15,5,5,0.82) 100%),
+        url('/Background/bgRegisterJP.jpeg');
     background-size: cover;
     background-position: center;
-    background-repeat: no-repeat;
     background-attachment: fixed;
 }
 
-/* =======================================================
-   TARJETA MODERNA CON EFECTO GLASSMORPHISM
-   ======================================================= */
+/* ── Brand above card ── */
+.register-page-container::before {
+    content: "NuctiusNow";
+    font-family: var(--font-editorial);
+    font-size: 2rem;
+    font-weight: 700;
+    color: #fff;
+    letter-spacing: -0.02em;
+}
+
+/* ── Glassmorphism card ── */
 .register-card {
-    background-color: rgba(24, 25, 27, 0.85); /* Fondo oscuro translúcido */
-    backdrop-filter: blur(16px); /* Desenfoque del fondo estilo iOS/Premium */
-    -webkit-backdrop-filter: blur(16px);
+    background: rgba(20, 20, 22, 0.78);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
     width: 100%;
     max-width: 440px;
-    border-radius: 20px;
-    border: 1px solid rgba(255, 255, 255, 0.08); /* Borde sutil brillante */
-    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+    border-radius: var(--radius-lg);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow:
+        0 24px 48px rgba(0, 0, 0, 0.55),
+        inset 0 1px 0 rgba(255, 255, 255, 0.06);
     overflow: hidden;
 }
 
+/* ── Header ── */
 .register-header {
-    padding: 2.5rem 2rem 1rem 2rem;
+    padding: 2rem 2rem 0.75rem;
     text-align: center;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
     .register-header h1 {
         color: #ffffff;
         margin: 0;
-        font-size: 2rem;
-        font-weight: 800;
-        letter-spacing: 1.5px;
+        font-size: 1.5rem;
+        font-weight: 700;
+        letter-spacing: 0.05em;
         text-transform: uppercase;
     }
 
 .register-subtitle {
-    color: #88888d;
-    font-size: 0.9rem;
-    margin-top: 0.4rem;
+    color: rgba(255, 255, 255, 0.45);
+    font-size: 0.8rem;
+    margin-top: 0.35rem;
     margin-bottom: 0;
 }
 
+/* ── Body ── */
 .register-body {
-    padding: 1rem 2.5rem 2.5rem 2.5rem;
+    padding: 1.5rem 2rem 2rem;
 }
 
-/* =======================================================
-   INPUTS ESTILO DARK PREMIUM
-   ======================================================= */
+/* ── Form groups ── */
 .form-group {
-    margin-bottom: 1.25rem;
+    margin-bottom: 1.1rem;
     display: flex;
     flex-direction: column;
 }
 
     .form-group label {
-        color: #cbd5e1;
-        font-size: 0.85rem;
-        margin-bottom: 0.4rem;
+        color: rgba(255, 255, 255, 0.55);
+        font-size: 0.75rem;
         font-weight: 600;
-        letter-spacing: 0.3px;
-        padding-left: 0.2rem;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        margin-bottom: 0.4rem;
+        padding-left: 0.1rem;
     }
 
     .form-group input {
-        background-color: #202124; /* Alineado con las cápsulas oscuras de tu app */
-        border: 1px solid #2d2e31;
+        background-color: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.1);
         outline: none;
-        padding: 0.75rem 1.2rem;
+        padding: 0.8rem 1.1rem;
         font-size: 0.95rem;
-        border-radius: 10px; /* Bordes ligeramente más cuadrados para verse más corporativo */
+        border-radius: var(--radius-sm);
         color: #ffffff;
         width: 100%;
         box-sizing: border-box;
-        transition: all 0.2s ease;
+        transition: border-color 0.2s, box-shadow 0.2s, background-color 0.2s;
+        font-family: var(--font-ui);
+        min-height: 48px;
     }
 
-        /* Efecto Focus Iluminado */
         .form-group input:focus {
-            border-color: #3b82f6;
-            background-color: #18191b;
-            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+            border-color: var(--accent);
+            background-color: rgba(255, 255, 255, 0.09);
+            box-shadow: 0 0 0 3px var(--accent-glow);
         }
 
-        /* Placeholders refinados */
         .form-group input::placeholder {
-            color: #55555a;
+            color: rgba(255, 255, 255, 0.2);
         }
 
-/* =======================================================
-   MEDIDOR DE SEGURIDAD REFINADO
-   ======================================================= */
+/* ── Password strength meter ── */
 .strength-meter-wrapper {
-    margin-top: 0.6rem;
+    margin-top: 0.5rem;
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
+    gap: 0.75rem;
 }
 
 .strength-bar-container {
     flex-grow: 1;
-    background-color: #2d2e31;
-    height: 4px;
-    border-radius: 10px;
+    background-color: rgba(255, 255, 255, 0.08);
+    height: 3px;
+    border-radius: var(--radius-pill);
     overflow: hidden;
 }
 
 .strength-bar {
     height: 100%;
-    border-radius: 10px;
+    border-radius: var(--radius-pill);
     transition: width 0.3s ease, background-color 0.3s ease;
     width: 0%;
 }
 
 .strength-text {
-    font-size: 0.75rem;
+    font-size: 0.7rem;
     font-weight: 700;
-    min-width: 80px;
+    min-width: 70px;
     text-align: right;
+    color: rgba(255, 255, 255, 0.5);
 }
 
-/* =======================================================
-   BOTÓN DE ACCIÓN PRINCIPAL (CREATE)
-   ======================================================= */
-.btn-create {
-    background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
-    color: #ffffff;
-    border: none;
-    outline: none;
-    width: 100%;
-    padding: 0.85rem;
-    font-size: 1rem;
-    font-weight: 700;
-    border-radius: 10px;
-    cursor: pointer;
-    margin-top: 0.5rem;
-    transition: all 0.2s ease;
-    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
-}
-
-    .btn-create:hover {
-        filter: brightness(1.1);
-        box-shadow: 0 6px 16px rgba(59, 130, 246, 0.4);
-        transform: translateY(-1px);
-    }
-
-    .btn-create:active {
-        transform: translateY(1px);
-    }
-
-/* =======================================================
-   ALERTAS DE ERROR SUTILES
-   ======================================================= */
+/* ── Error alert ── */
 .error-alert {
-    background-color: rgba(239, 68, 68, 0.1);
-    border: 1px solid rgba(239, 68, 68, 0.25);
-    color: #f87171;
-    padding: 0.75rem 1rem;
-    border-radius: 10px;
-    font-size: 0.85rem;
-    margin-bottom: 1.25rem;
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: 0.6rem;
+    background-color: rgba(230, 57, 70, 0.12);
+    border: 1px solid rgba(230, 57, 70, 0.3);
+    color: #fca5a5;
+    padding: 0.85rem 1rem;
+    border-radius: var(--radius-sm);
+    margin-bottom: 1.1rem;
+    font-size: 0.875rem;
 }
 
 .error-icon {
     font-size: 1rem;
+    flex-shrink: 0;
 }
 
 .error-text {
     color: #fca5a5;
     line-height: 1.4;
+    font-size: 0.875rem;
 }
 
-/* =======================================================
-   REDIRECCIÓN Y LEGALES
-   ======================================================= */
+/* ── Primary button ── */
+.btn-create {
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%);
+    color: #ffffff;
+    border: none;
+    outline: none;
+    width: 100%;
+    padding: 0.9rem;
+    font-size: 0.95rem;
+    font-weight: 700;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    margin-top: 0.5rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    min-height: 48px;
+    transition: filter 0.2s, box-shadow 0.2s, transform 0.1s;
+    box-shadow: 0 4px 16px rgba(230, 57, 70, 0.3);
+    font-family: var(--font-ui);
+}
+
+    .btn-create:hover {
+        filter: brightness(1.1);
+        box-shadow: 0 6px 20px rgba(230, 57, 70, 0.45);
+        transform: translateY(-1px);
+    }
+
+    .btn-create:active {
+        transform: translateY(1px);
+        filter: brightness(0.95);
+    }
+
+/* ── Login redirect ── */
 .login-redirect {
     text-align: center;
-    margin-top: 1.5rem;
-    font-size: 0.85rem;
-    color: #94a3b8;
+    margin-top: 1.25rem;
+    font-size: 0.8rem;
+    color: rgba(255, 255, 255, 0.4);
 }
 
     .login-redirect a {
-        color: #3b82f6;
+        color: var(--accent);
         text-decoration: none;
         font-weight: 600;
         transition: color 0.15s ease;
     }
 
         .login-redirect a:hover {
-            color: #60a5fa;
+            color: #f87171;
             text-decoration: underline;
         }
 
+/* ── reCAPTCHA disclaimer ── */
 .captcha-v3-disclaimer {
-    font-size: 0.7rem;
-    color: #64748b;
+    font-size: 0.68rem;
+    color: rgba(255, 255, 255, 0.25);
     margin-top: 0.5rem;
-    margin-bottom: 1.5rem;
+    margin-bottom: 1.25rem;
     line-height: 1.4;
     text-align: center;
 }
 
     .captcha-v3-disclaimer a {
-        color: #94a3b8;
+        color: rgba(255, 255, 255, 0.35);
         text-decoration: underline;
     }
 
         .captcha-v3-disclaimer a:hover {
-            color: #ffffff;
+            color: rgba(255, 255, 255, 0.6);
         }

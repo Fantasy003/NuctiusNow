@@ -1,30 +1,48 @@
-﻿<div class="top-row ps-3 navbar navbar-dark">
-    <div class="container-fluid">
-        <a class="navbar-brand" href="">NuctiusNow</a>
+@inject NavigationManager Navigation
+
+<!-- ── Top Navigation Bar ── -->
+<header class="top-nav">
+    <div class="top-nav-inner">
+        <!-- Logo -->
+        <a href="/" class="nav-logo">
+            <span class="logo-accent">N</span>uctiusNow
+        </a>
+
+        <!-- Desktop links -->
+        <nav class="nav-links" aria-label="Main navigation">
+            <NavLink href="" Match="NavLinkMatch.All" class="nav-link-item">Home</NavLink>
+            <NavLink href="just-for-you" class="nav-link-item">For You</NavLink>
+            <NavLink href="user-settings" class="nav-link-item">Settings</NavLink>
+        </nav>
+
+        <!-- Hamburger toggle (mobile) -->
+        <button class="hamburger" @onclick="ToggleMenu" aria-label="Menu" aria-expanded="@menuOpen">
+            <span></span>
+            <span></span>
+            <span></span>
+        </button>
     </div>
-</div>
 
-<input type="checkbox" title="Navigation menu" class="navbar-toggler" />
+    <!-- Mobile dropdown menu -->
+    @if (menuOpen)
+    {
+        <nav class="mobile-dropdown" aria-label="Mobile navigation">
+            <NavLink href="" Match="NavLinkMatch.All" class="mobile-nav-item" @onclick="CloseMenu">Home</NavLink>
+            <NavLink href="just-for-you" class="mobile-nav-item" @onclick="CloseMenu">For You</NavLink>
+            <NavLink href="user-settings" class="mobile-nav-item" @onclick="CloseMenu">Settings</NavLink>
+        </nav>
+    }
+</header>
 
-<div class="nav-scrollable" onclick="document.querySelector('.navbar-toggler').click()">
-    <nav class="flex-column">
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
-                <span class="bi bi-house-door-fill-nav-menu" aria-hidden="true"></span> Home
-            </NavLink>
-        </div>
+@code {
+    private bool menuOpen = false;
 
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="counter">
-                <span class="bi bi-plus-square-fill-nav-menu" aria-hidden="true"></span> Counter
-            </NavLink>
-        </div>
+    private void ToggleMenu() => menuOpen = !menuOpen;
+    private void CloseMenu()  => menuOpen = false;
 
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="weather">
-                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Weather
-            </NavLink>
-        </div>
-    </nav>
-</div>
-
+    protected override void OnInitialized()
+    {
+        // Close menu on navigation
+        Navigation.LocationChanged += (_, __) => { menuOpen = false; InvokeAsync(StateHasChanged); };
+    }
+}

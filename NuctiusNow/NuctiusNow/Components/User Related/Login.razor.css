@@ -1,112 +1,152 @@
-﻿/* =======================================================
-   CONTENEDOR PRINCIPAL CON IMAGEN Y FILTRO PROFESIONAL
-   ======================================================= */
+/* ============================================================
+   LOGIN PAGE — Mobile-First Glassmorphism
+   ============================================================ */
+
 .login-page-container {
     min-height: 100vh;
     width: 100%;
     display: flex;
+    flex-direction: column;
     justify-content: center;
     align-items: center;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    margin: 0;
-    padding: 3rem 1rem;
+    gap: 1.5rem;
+    font-family: var(--font-ui);
+    padding: 2rem 1rem;
     box-sizing: border-box;
+    /* Background image with dark gradient */
     background-color: #0c0d0e;
-    /* Mismo gradiente e imagen de fondo para consistencia total */
-    background-image: linear-gradient(135deg, rgba(10, 11, 14, 0.8) 0%, rgba(19, 28, 41, 0.8) 100%), url('/Background/bgLoginJP.jpeg');
+    background-image:
+        linear-gradient(160deg, rgba(10,11,14,0.88) 0%, rgba(15,5,5,0.82) 100%),
+        url('/Background/bgLoginJP.jpeg');
     background-size: cover;
     background-position: center;
-    background-repeat: no-repeat;
     background-attachment: fixed;
 }
 
-/* =======================================================
-   TARJETA MODERNA CON EFECTO GLASSMORPHISM
-   ======================================================= */
+/* ── Brand above card ── */
+.login-page-container::before {
+    content: "NuctiusNow";
+    font-family: var(--font-editorial);
+    font-size: 2rem;
+    font-weight: 700;
+    color: #fff;
+    letter-spacing: -0.02em;
+}
+
+/* ── Glassmorphism card ── */
 .login-card {
-    background-color: rgba(24, 25, 27, 0.85); /* Fondo oscuro translúcido */
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
+    background: rgba(20, 20, 22, 0.78);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
     width: 100%;
-    max-width: 440px;
-    border-radius: 20px;
-    border: 1px solid rgba(255, 255, 255, 0.08); /* Borde sutil brillante */
-    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+    max-width: 420px;
+    border-radius: var(--radius-lg);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow:
+        0 24px 48px rgba(0, 0, 0, 0.55),
+        inset 0 1px 0 rgba(255, 255, 255, 0.06);
     overflow: hidden;
 }
 
+/* ── Header ── */
 .login-header {
-    padding: 2.5rem 2rem 1rem 2rem;
+    padding: 2rem 2rem 0.75rem;
     text-align: center;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
     .login-header h1 {
         color: #ffffff;
         margin: 0;
-        font-size: 2rem;
-        font-weight: 800;
-        letter-spacing: 1.5px;
+        font-size: 1.5rem;
+        font-weight: 700;
+        letter-spacing: 0.05em;
         text-transform: uppercase;
     }
 
 .login-subtitle {
-    color: #88888d;
-    font-size: 0.9rem;
-    margin-top: 0.4rem;
+    color: rgba(255, 255, 255, 0.45);
+    font-size: 0.8rem;
+    margin-top: 0.35rem;
     margin-bottom: 0;
 }
 
+/* ── Body ── */
 .login-body {
-    padding: 1rem 2.5rem 2.5rem 2.5rem;
+    padding: 1.5rem 2rem 2rem;
 }
 
-/* =======================================================
-   INPUTS ESTILO DARK PREMIUM
-   ======================================================= */
+/* ── Form groups ── */
 .form-group {
-    margin-bottom: 1.25rem;
+    margin-bottom: 1.1rem;
     display: flex;
     flex-direction: column;
 }
 
     .form-group label {
-        color: #cbd5e1;
-        font-size: 0.85rem;
-        margin-bottom: 0.4rem;
+        color: rgba(255, 255, 255, 0.55);
+        font-size: 0.75rem;
         font-weight: 600;
-        letter-spacing: 0.3px;
-        padding-left: 0.2rem;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        margin-bottom: 0.4rem;
+        padding-left: 0.1rem;
     }
 
     .form-group input {
-        background-color: #202124;
-        border: 1px solid #2d2e31;
+        background-color: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.1);
         outline: none;
-        padding: 0.75rem 1.2rem;
+        padding: 0.8rem 1.1rem;
         font-size: 0.95rem;
-        border-radius: 10px; /* Bordes suavizados modernos */
+        border-radius: var(--radius-sm);
         color: #ffffff;
         width: 100%;
         box-sizing: border-box;
-        transition: all 0.2s ease;
+        transition: border-color 0.2s, box-shadow 0.2s, background-color 0.2s;
+        font-family: var(--font-ui);
+        min-height: 48px;
     }
 
         .form-group input:focus {
-            border-color: #3b82f6;
-            background-color: #18191b;
-            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+            border-color: var(--accent);
+            background-color: rgba(255, 255, 255, 0.09);
+            box-shadow: 0 0 0 3px var(--accent-glow);
         }
 
         .form-group input::placeholder {
-            color: #55555a;
+            color: rgba(255, 255, 255, 0.2);
         }
 
-/* =======================================================
-   CHECKBOX PERSONALIZADO REFINADO
-   ======================================================= */
+/* ── Error alert ── */
+.error-alert {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    background-color: rgba(230, 57, 70, 0.12);
+    border: 1px solid rgba(230, 57, 70, 0.3);
+    color: #fca5a5;
+    padding: 0.85rem 1rem;
+    border-radius: var(--radius-sm);
+    margin-bottom: 1.1rem;
+    font-size: 0.875rem;
+}
+
+.error-icon {
+    font-size: 1rem;
+    flex-shrink: 0;
+}
+
+.error-text {
+    color: #fca5a5;
+    line-height: 1.4;
+    font-size: 0.875rem;
+}
+
+/* ── Checkbox ── */
 .form-checkbox {
-    margin-bottom: 1.5rem;
-    margin-top: 0.5rem;
+    margin-bottom: 1.25rem;
+    margin-top: 0.25rem;
 }
 
 .checkbox-container {
@@ -118,28 +158,6 @@
     gap: 0.6rem;
 }
 
-.error-alert {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    background-color: rgba(239, 68, 68, 0.12);
-    border: 1px solid rgba(239, 68, 68, 0.25);
-    color: #fee2e2;
-    padding: 1rem 1.1rem;
-    border-radius: 12px;
-    margin-bottom: 1.25rem;
-}
-
-.error-icon {
-    font-size: 1.1rem;
-}
-
-.error-text {
-    font-size: 0.95rem;
-    line-height: 1.4;
-    color: #fca5a5;
-}
-
     .checkbox-container input {
         position: absolute;
         opacity: 0;
@@ -148,31 +166,24 @@
         width: 0;
     }
 
-/* Reemplazo del círculo por un diseño cuadrado redondeado premium */
 .custom-checkmark {
     height: 18px;
     width: 18px;
-    background-color: #202124;
-    border: 1px solid #2d2e31;
+    background-color: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.18);
     border-radius: 4px;
     display: inline-block;
     position: relative;
+    flex-shrink: 0;
     transition: all 0.2s ease;
 }
 
-.checkbox-label {
-    color: #94a3b8;
-    font-size: 0.85rem;
-    font-weight: 500;
-}
-
-/* Estado del checkbox seleccionado (azul premium con tilde blanco) */
 .checkbox-container input:checked ~ .custom-checkmark {
-    background-color: #3b82f6;
-    border-color: #3b82f6;
+    background-color: var(--accent);
+    border-color: var(--accent);
 }
 
-    .checkbox-container input:checked ~ .custom-checkmark:after {
+    .checkbox-container input:checked ~ .custom-checkmark::after {
         content: "";
         position: absolute;
         left: 5px;
@@ -185,57 +196,61 @@
     }
 
 .checkbox-container:hover input ~ .custom-checkmark {
-    border-color: #3b82f6;
+    border-color: var(--accent);
 }
 
-/* =======================================================
-   BOTÓN DE ACCIÓN PRINCIPAL (GO)
-   ======================================================= */
+.checkbox-label {
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 0.8rem;
+}
+
+/* ── Primary button ── */
 .btn-go {
-    background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%);
     color: #ffffff;
     border: none;
     outline: none;
     width: 100%;
-    padding: 0.85rem;
-    font-size: 1rem;
+    padding: 0.9rem;
+    font-size: 0.95rem;
     font-weight: 700;
-    border-radius: 10px;
+    border-radius: var(--radius-sm);
     cursor: pointer;
     text-transform: uppercase;
-    letter-spacing: 0.5px;
-    transition: all 0.2s ease;
-    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+    letter-spacing: 0.06em;
+    min-height: 48px;
+    transition: filter 0.2s, box-shadow 0.2s, transform 0.1s;
+    box-shadow: 0 4px 16px rgba(230, 57, 70, 0.3);
+    font-family: var(--font-ui);
 }
 
     .btn-go:hover {
         filter: brightness(1.1);
-        box-shadow: 0 6px 16px rgba(59, 130, 246, 0.4);
+        box-shadow: 0 6px 20px rgba(230, 57, 70, 0.45);
         transform: translateY(-1px);
     }
 
     .btn-go:active {
         transform: translateY(1px);
+        filter: brightness(0.95);
     }
 
-/* =======================================================
-   REDIRECCIÓN
-   ======================================================= */
+/* ── Register redirect link ── */
 .register-redirect {
     text-align: center;
-    margin-top: 1.5rem;
-    font-size: 0.85rem;
-    color: #94a3b8;
+    margin-top: 1.25rem;
+    font-size: 0.8rem;
+    color: rgba(255, 255, 255, 0.4);
 }
 
     .register-redirect a {
-        color: #3b82f6;
+        color: var(--accent);
         text-decoration: none;
         font-weight: 600;
         transition: color 0.15s ease;
     }
 
         .register-redirect a:hover {
-            color: #60a5fa;
+            color: #f87171;
             text-decoration: underline;
         }

@@ -44,7 +44,7 @@ public class LocalLlmService : ILocalLlmService
         var endpointFromConfig = config.GetValue<string>("LocalLlm:Endpoint");
         if (string.IsNullOrWhiteSpace(endpointFromConfig))
         {
-            _endpoint = "http://26.209.188.105:1234/v1/completions";
+            _endpoint = "http://169.254.39.114:1234/v1/completions";
         }
         else if (Uri.IsWellFormedUriString(endpointFromConfig, UriKind.Absolute))
         {

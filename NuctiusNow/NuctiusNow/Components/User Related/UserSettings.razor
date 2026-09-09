@@ -87,7 +87,7 @@ else
 
                     <div class="preferences-header">
                         <h2>PREFERENCES</h2>
-                        <button class="btn-add" @onclick="AbrirModalPreferencia" title="Add preference">＋</button>
+                        <button class="btn-add" @onclick="OpenPreferenceModal" title="Add preference">＋</button>
                     </div>
 
                     <div class="preferences-list">
@@ -95,7 +95,7 @@ else
                         {
                             <div class="preference-item" @key="pref">
                                 <span>@pref</span>
-                                <button class="btn-remove" @onclick="() => EliminarPreferencia(pref)">✕</button>
+                                <button class="btn-remove" @onclick="() => RemovePreference(pref)">✕</button>
                             </div>
                         }
                     </div>
@@ -103,55 +103,36 @@ else
                 </div>
 
                 <div class="settings-actions">
-                    <button class="btn-action btn-themes" @onclick="ManejarTemas">
+                    <button class="btn-action btn-themes" @onclick="OpenThemeModal">
                         <svg class="btn-svg" viewBox="0 0 24 24"><path d="M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A1.5,1.5 0 0,0 13.5,20.5A1.5,1.5 0 0,0 13,19.4L13.1,19.3C13.3,19.1 13.6,19 14,19H16A5,5 0 0,0 21,14C21,9.24 16.96,5 12,5A1,1 0 0,0 11,6A1,1 0 0,0 12,7A3,3 0 0,1 15,10A1,1 0 0,0 16,11H17A2,2 0 0,1 19,13A2,2 0 0,1 17,15H14C12.34,15 11,13.66 11,12A4,4 0 0,1 15,8A1,1 0 0,0 15,6C15,4.34 13.66,3 12,3A8,8 0 0,0 4,11A8,8 0 0,0 12,19A1,1 0 0,0 13,18A1,1 0 0,0 12,17A6,6 0 0,1 6,11A6,6 0 0,1 12,5Z" /></svg>
                         Themes
                     </button>
-                    <button class="btn-action btn-logout" @onclick="ManejarLogout" disabled="@isLoggingOut">
-                        @if (isLoggingOut)
-                        {
-                            <svg class="btn-svg" viewBox="0 0 24 24"><path d="M12 4v4" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
-                            <span>Logging out...</span>
-                        }
-                        else
-                        {
-                            <svg class="btn-svg" viewBox="0 0 24 24"><path d="M16,17V14H9V10H16V7L21,12L16,17M14,2A2,2 0 0,1 16,4V6H14V4H5V20H14V18H16V20A2,2 0 0,1 14,22H5A2,2 0 0,1 3,20V4A2,2 0 0,1 5,2M14,10V14H11V10H14Z" /></svg>
-                            <span>Logout</span>
-                        }
-                    </button>
                 </div>
-
-                <button class="btn-action btn-apply" @onclick="GuardarCambios" disabled="@isSaving">
-                    @if (isSaving)
-                    {
-                        <svg class="btn-svg" viewBox="0 0 24 24"><path d="M12 4v4" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
-                        <span>Saving...</span>
-                    }
-                    else
-                    {
-                        <svg class="btn-svg" viewBox="0 0 24 24"><path d="M15,9H5V5H15M12,19A3,3 0 0,1 9,16A3,3 0 0,1 12,13A3,3 0 0,1 15,16A3,3 0 0,1 15,16A3,3 0 0,1 12,19M17,3H5C3.89,3 3,3.9 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V7L17,3Z" /></svg>
-                        <span>Apply Changes</span>
-                    }
-                </button>
             </div>
 
         </div>
     </div>
 }
 
+<!-- Sticky save bar for mobile -->
+<div class="sticky-save">
+    <button class="btn-action btn-logout" @onclick="HandleLogout">Logout</button>
+    <button class="btn-action btn-apply" @onclick="SaveChanges">Apply Changes</button>
+</div>
+
 @if (isThemeModalOpen)
 {
-    <div class="modal-overlay" @onclick="CerrarModal">
+    <div class="modal-overlay" @onclick="CloseThemeModal">
         <div class="modal-card" @onclick:stopPropagation>
             <div class="modal-header">
                 <h3>SELECT THEME</h3>
-                <button class="modal-close" @onclick="CerrarModal">✕</button>
+                <button class="modal-close" @onclick="CloseThemeModal">✕</button>
             </div>
             <div class="modal-buttons-grid">
-                <button class="theme-btn-option opt-light" @onclick='() => SeleccionarTema("light")'>Light</button>
-                <button class="theme-btn-option opt-dark" @onclick='() => SeleccionarTema("dark")'>Dark</button>
-                <button class="theme-btn-option opt-retro" @onclick='() => SeleccionarTema("retro")'>Retro</button>
-                <button class="theme-btn-option opt-office" @onclick='() => SeleccionarTema("office")'>Office</button>
+                <button class="theme-btn-option opt-light" @onclick='() => SelectTheme("light")'>Light</button>
+                <button class="theme-btn-option opt-dark" @onclick='() => SelectTheme("dark")'>Dark</button>
+                <button class="theme-btn-option opt-retro" @onclick='() => SelectTheme("retro")'>Retro</button>
+                <button class="theme-btn-option opt-office" @onclick='() => SelectTheme("office")'>Office</button>
             </div>
         </div>
     </div>
@@ -159,11 +140,11 @@ else
 
 @if (isPrefModalOpen)
 {
-    <div class="modal-overlay" @onclick="CerrarModalPreferencia">
+    <div class="modal-overlay" @onclick="ClosePreferenceModal">
         <div class="modal-card" @onclick:stopPropagation>
             <div class="modal-header">
                 <h3>ADD PREFERENCE</h3>
-                <button class="modal-close" @onclick="CerrarModalPreferencia">✕</button>
+                <button class="modal-close" @onclick="ClosePreferenceModal">✕</button>
             </div>
 
             <div class="modal-body">
@@ -190,7 +171,7 @@ else
             </div>
 
             <div class="modal-footer">
-                <button class="btn-action btn-apply" @onclick="GuardarPreferencia">
+                <button class="btn-action btn-apply" @onclick="SavePreference">
                     Add Preference
                 </button>
             </div>
@@ -201,7 +182,7 @@ else
 @code {
     private SettingsFields userModel = new();
 
-    // Estados de Modales e Inputs
+    // Modal and input state
     private bool isThemeModalOpen = false;
     private bool isPrefModalOpen = false;
     private string newPreferenceInput = "";
@@ -210,7 +191,7 @@ else
     private bool isSaving = false;
     private bool isLoggingOut = false;
 
-    // Diccionario/Lista básica de insultos o palabras no permitidas
+    // Basic blocklist of disallowed words
     private readonly HashSet<string> blocklist = new(StringComparer.OrdinalIgnoreCase)
     {
         "mierda", "puto", "puta", "carajo", "pelotudo", "boludo", "concha", "forro", "culiao"
@@ -251,27 +232,27 @@ else
         }
     }
 
-    private void ManejarTemas() => isThemeModalOpen = true;
-    private void CerrarModal() => isThemeModalOpen = false;
+    private void OpenThemeModal() => isThemeModalOpen = true;
+    private void CloseThemeModal() => isThemeModalOpen = false;
 
-    private async Task SeleccionarTema(string tema)
+    private async Task SelectTheme(string theme)
     {
-        await JSRuntime.InvokeVoidAsync("localStorage.setItem", "selectedTheme", tema);
-        ThemeState.SetTheme(tema);
+        await JSRuntime.InvokeVoidAsync("localStorage.setItem", "selectedTheme", theme);
+        ThemeState.SetTheme(theme);
         isThemeModalOpen = false;
     }
 
-    // Lógica del Nuevo Modal de Preferencias
-    private void AbrirModalPreferencia()
+    // Preference modal logic
+    private void OpenPreferenceModal()
     {
         newPreferenceInput = "";
         validationMessage = "";
         isPrefModalOpen = true;
     }
 
-    private void CerrarModalPreferencia() => isPrefModalOpen = false;
+    private void ClosePreferenceModal() => isPrefModalOpen = false;
 
-    private void GuardarPreferencia()
+    private void SavePreference()
     {
         if (string.IsNullOrWhiteSpace(newPreferenceInput))
         {
@@ -281,14 +262,14 @@ else
 
         string cleanInput = newPreferenceInput.Trim();
 
-        // Evitar duplicados
+        // Prevent duplicates
         if (userModel.Preferences.Any(p => p.Equals(cleanInput, StringComparison.OrdinalIgnoreCase)))
         {
             validationMessage = "This preference already exists.";
             return;
         }
 
-        // Verificamos si alguna palabra ingresada contiene o es un insulto de la blocklist
+        // Check blocklist for disallowed words
         foreach (var badWord in blocklist)
         {
             if (cleanInput.Contains(badWord, StringComparison.OrdinalIgnoreCase))
@@ -298,26 +279,26 @@ else
             }
         }
 
-        // Si pasa el filtro, se agrega y se cierra el modal
+        // If the input is valid, add and close the modal
         userModel.Preferences.Add(cleanInput);
         isPrefModalOpen = false;
     }
 
-    // Permite guardar también al presionar Enter en el teclado
+    // Allow saving by pressing Enter in the input
     private void HandlePrefKeyUp(KeyboardEventArgs e)
     {
         if (e.Key == "Enter")
         {
-            GuardarPreferencia();
+            SavePreference();
         }
     }
 
-    private async Task GuardarCambios()
+    private async Task SaveChanges()
     {
         saveMessage = string.Empty;
         if (!sessionService.UserId.HasValue)
         {
-            saveMessage = "No se encontró el usuario autenticado.";
+            saveMessage = "Authenticated user not found.";
             return;
         }
 
@@ -338,16 +319,16 @@ else
             if (success && prefSuccess)
             {
                 await sessionService.SetUserAsync(sessionService.UserId.Value, userModel.Username);
-                saveMessage = "Perfil actualizado correctamente.";
+                saveMessage = "Profile updated successfully.";
             }
             else
             {
-                saveMessage = "No se pudo guardar el perfil.";
+                saveMessage = "Could not save profile.";
             }
         }
         catch (Exception ex)
         {
-            saveMessage = "Error al guardar: " + ex.Message;
+            saveMessage = "Error saving: " + ex.Message;
         }
         finally
         {
@@ -356,9 +337,9 @@ else
         }
     }
 
-    private void EliminarPreferencia(string target) => userModel.Preferences.Remove(target);
+    private void RemovePreference(string target) => userModel.Preferences.Remove(target);
 
-    private async Task ManejarLogout()
+    private async Task HandleLogout()
     {
         if (isLoggingOut) return;
         isLoggingOut = true;

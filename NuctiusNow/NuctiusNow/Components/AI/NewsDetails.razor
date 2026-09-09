@@ -1,47 +1,47 @@
 @rendermode InteractiveServer
 
-<PageTitle>Detalle de la Noticia - NuctiusNow</PageTitle>
+<PageTitle>News Detail - NuctiusNow</PageTitle>
 
-<div class="detalle-page-container">
+<div class="detail-page-container">
 
     <div class="back-nav">
-        <NavLink href="just-for-you" class="btn-back">⬅ Volver a Just For You</NavLink>
+        <NavLink href="just-for-you" class="btn-back">⬅ Back to Just For You</NavLink>
     </div>
 
-    <article class="detalle-card">
+    <article class="detail-card">
         <div class="meta-info">
-            <span class="categoria">@Categoria</span>
-            <span class="noticia-id">News N°: #@Id</span>
+            <span class="category">@Category</span>
+            <span class="news-id">News #: #@Id</span>
         </div >
 
-        <h1 class="detalle-title">@Titulo</h1>
+        <h1 class="detail-title">@Title</h1>
 
-        <div class="detalle-content-layout">
-            <img src="@UrlImagen" class="detalle-img" alt="Imagen Noticia Full" />
+        <div class="detail-content-layout">
+            <img src="@ImageUrl" class="detail-img" alt="News Image Full" />
 
-            <div class="detalle-text">
-                <h3>Resumen Principal</h3>
-                <p class="body-destacado">@Contenido</p>
+            <div class="detail-text">
+                <h3>Main Summary</h3>
+                <p class="body-featured">@Content</p>
 
-                <h3>Cuerpo Completo de la Noticia</h3>
+                <h3>Full Article Body</h3>
                 <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.</p>
-                <p>Añadiendo contexto real a la información visual analizada de la aplicación, este segmento de datos simula el despliegue dinámico de información extendida requerida para la experiencia del usuario final en portales premium.</p>
+                <p>Adding contextual information and simulated content for the full article body displayed in premium portals.</p>
             </div >
         </div>
 
         <div class="article-actions-bar">
             <div class="reactions-group">
-                <button class="btn-action btn-like @(hasLiked ? "active-like" : "")" @onclick="ManejarLike">
+                <button class="btn-action btn-like @(hasLiked ? "active-like" : "")" @onclick="HandleLike">
                     <span class="action-icon">👍</span>
                     <span class="action-count">@likeCount</span>
                 </button>
 
-                <button class="btn-action btn-dislike @(hasDisliked ? "active-dislike" : "")" @onclick="ManejarDislike">
+                <button class="btn-action btn-dislike @(hasDisliked ? "active-dislike" : "")" @onclick="HandleDislike">
                     <span class="action-icon">👎</span>
                 </button>
             </div >
 
-            <button class="btn-action btn-share" @onclick="ManejarShare">
+            <button class="btn-action btn-share" @onclick="HandleShare">
                 <span class="action-icon">📨</span> Share
             </button>
         </div >
@@ -55,12 +55,12 @@
 
     [Parameter] public int Id { get; set; }
 
-    private string Categoria { get; set; } = "Cargando...";
-    private string Titulo { get; set; } = "Cargando...";
-    private string Contenido { get; set; } = "";
-    private string UrlImagen { get; set; } = "https://picsum.photos/400/300";
+    private string Category { get; set; } = "Loading...";
+    private string Title { get; set; } = "Loading...";
+    private string Content { get; set; } = "";
+    private string ImageUrl { get; set; } = "https://picsum.photos/400/300";
 
-    // Estados de interacción simulados
+    // Interaction state
     private int likeCount = 42;
     private bool hasLiked = false;
     private bool hasDisliked = false;
@@ -70,9 +70,9 @@
         await base.OnInitializedAsync();
 
         // --- Data Loading Logic (Modified) ---
-        if (Id == 1) { Categoria = "Technology"; Titulo = "NVIDIA: SPARK PROCESSOR"; UrlImagen = "https://picsum.photos/id/0/400/300"; }
-        else if (Id == 2) { Categoria = "Sports"; Titulo = "WORLD CUP: URUGUAY ELIMINATED"; UrlImagen = "https://picsum.photos/id/73/400/300"; }
-        else if (Id == 3) { Categoria = "Weather"; Titulo = "ARGENTINA: RAINING ON MONDAY"; UrlImagen = "https://picsum.photos/id/401/400/300"; }
+        if (Id == 1) { Category = "Technology"; Title = "NVIDIA: SPARK PROCESSOR"; ImageUrl = "https://picsum.photos/id/0/400/300"; }
+        else if (Id == 2) { Category = "Sports"; Title = "WORLD CUP: URUGUAY ELIMINATED"; ImageUrl = "https://picsum.photos/id/73/400/300"; }
+        else if (Id == 3) { Category = "Weather"; Title = "ARGENTINA: RAINING ON MONDAY"; ImageUrl = "https://picsum.photos/id/401/400/300"; }
         else // Default case, simulate AI processing for unknown IDs or specific testing ID
         {
             if (Id == 999) // Specific ID to trigger the AI workflow simulation
@@ -81,31 +81,31 @@
                 {
                     // Simulate fetching data from an external source URL and updating state variables directly.
                     var (news, detailNews) = await AIService.ProcessAndSaveNewsAsync("http://example.com/ai-article");
-                    Titulo = GetObjectStringProperty(news, "Title", "title", "Headline", "NewsTitle") ?? "AI Generated Headline";
-                    Categoria = GetObjectStringProperty(news, "Category", "category", "Section", "Topic") ?? "AI Insight";
-                    UrlImagen = GetObjectStringProperty(news, "ImageUrl", "imageUrl", "Image", "Url") ?? "https://picsum.photos/id/160/400/300";
-                    Contenido = GetObjectStringProperty(detailNews, "Context", "context", "Summary", "Content", "Body") ?? "No summary context available from AI service.";
+                    Title = GetObjectStringProperty(news, "Title", "title", "Headline", "NewsTitle") ?? "AI Generated Headline";
+                    Category = GetObjectStringProperty(news, "Category", "category", "Section", "Topic") ?? "AI Insight";
+                    ImageUrl = GetObjectStringProperty(news, "ImageUrl", "imageUrl", "Image", "Url") ?? "https://picsum.photos/id/160/400/300";
+                    Content = GetObjectStringProperty(detailNews, "Context", "context", "Summary", "Content", "Body") ?? "No summary context available from AI service.";
 
                 }
                 catch (Exception ex)
                 {
                     Console.WriteLine($"Error processing AI news: {ex.Message}");
-                    Titulo = $"Failed to Load Details for ID {Id}";
-                    Categoria = "Error";
-                    Contenido = $"Could not load detailed content using AI Service. Error: {ex.Message}";
+                    Title = $"Failed to Load Details for ID {Id}";
+                    Category = "Error";
+                    Content = $"Could not load detailed content using AI Service. Error: {ex.Message}";
                 }
             }
             else // Fallback for other IDs without explicit logic
             {
-                 Categoria = "Technology"; 
-                 Titulo = $"News Article Title Placeholder (ID: {Id})"; 
-                 UrlImagen = "https://picsum.photos/id/160/400/300"; 
-                 Contenido = "DASDADADADAADASDDADSADASDASDASDASDASDASDADADADADADADADADADADADADADADADASDASDASDADADADASDADADASDADADADSADADADADADADDADASDADADADADADASDADADADADSDDADADADADADADADADADADADADADADADSADASDASDADADADSADADADADADASDADADADA";
+                 Category = "Technology"; 
+                 Title = $"News Article Title Placeholder (ID: {Id})"; 
+                 ImageUrl = "https://picsum.photos/id/160/400/300"; 
+                 Content = "DASDADADADAADASDDADSADASDASDASDASDASDASDADADADADADADADADADADADADADADADASDASDASDADADADASDADADASDADADADSADADADADADADDADASDADADADADADASDADADADADSDDADADADADADADADADADADADADADADADSADASDASDADADADSADADADADADASDADADADA";
             }
         }
     }
 
-    private void ManejarLike()
+    private void HandleLike()
     {
         if (hasLiked)
         {
@@ -116,11 +116,11 @@
         {
             likeCount++;
             hasLiked = true;
-            if (hasDisliked) hasDisliked = false; // Desmarca dislike si estaba activo
+            if (hasDisliked) hasDisliked = false; // clear dislike if it was active
         }
     }
 
-    private void ManejarDislike()
+    private void HandleDislike()
     {
         if (hasDisliked)
         {
@@ -132,14 +132,14 @@
             if (hasLiked)
             {
                 likeCount--;
-                hasLiked = false; // Desmarca like si estaba activo
+                hasLiked = false; // clear like if it was active
             }
         }
     }
 
-    private void ManejarShare()
+    private void HandleShare()
     {
-        Console.WriteLine($"Enlace de la noticia #{Id} copiado al portapapeles.");
+        Console.WriteLine($"News link #{Id} copied to clipboard.");
     }
 
     private string GetObjectStringProperty(object source, params string[] propertyNames)

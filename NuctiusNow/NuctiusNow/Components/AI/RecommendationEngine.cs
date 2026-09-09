@@ -19,6 +19,21 @@ public class RecommendationEngine
         _logger = logger;
     }
 
+    // Helper methods for preference lookup and text summarization are defined below.
+
+    // Helper: summarize plain text via underlying LLM service
+    public async Task<string> SummarizeTextAsync(string text, int maxChars = 220)
+    {
+        if (_llmService == null) return text.Length <= maxChars ? text : text.Substring(0, maxChars) + "...";
+        try
+        {
+            var s = await _llmService.SummarizeAsync(text, maxChars);
+            if (!string.IsNullOrWhiteSpace(s)) return s;
+        }
+        catch { }
+        return text.Length <= maxChars ? text : text.Substring(0, maxChars) + "...";
+    }
+
     /// <summary>
     /// Explicit 5-step workflow:
     /// 1. Receive user preferences from DB
@@ -217,9 +232,9 @@ public class RecommendationEngine
         return ingested;
     }
 
-    // Calcula y devuelve las mejores noticias recomendadas para un usuario
+    // Returns the top recommended news for a user
     // days: lookback window in days (e.g. last 30 days)
-    public async Task<List<News>> ObtenerRecomendacionesParaUsuarioAsync(int userId, int cantidad = 10, int days = 30)
+    public async Task<List<News>> GetRecommendationsForUserAsync(int userId, int cantidad = 10, int days = 30)
     {
         // 1. Cargar preferencias del usuario (Tags y sus pesos acumulados)
         var userPreferences = await _context.UserPreferences
@@ -294,7 +309,7 @@ public class RecommendationEngine
         var scored = noticiasCandidatas.Select(news => new
         {
             Noticia = news,
-            BaseScore = CalcularScore(news, userPreferences)
+            BaseScore = CalculateScore(news, userPreferences)
         }).ToList();
 
         // If no LLM available, fall back to base scoring
@@ -451,42 +466,42 @@ public class RecommendationEngine
         return text.Substring(0, maxChars).TrimEnd() + "...";
     }
 
-    private double CalcularScore(News news, List<Preference> userPreferences)
+    private double CalculateScore(News news, List<Preference> userPreferences)
     {
         double score = 0.0;
 
-        // Búsqueda de coincidencia por Tag/Categoría
-        var prefCorrespondiente = userPreferences.FirstOrDefault(p => p.IdTag == news.IdTag);
-        if (prefCorrespondiente != null)
+        // Match by Tag/Category
+        var matchingPref = userPreferences.FirstOrDefault(p => p.IdTag == news.IdTag);
+        if (matchingPref != null)
         {
-            score += prefCorrespondiente.Weight * 2.0; // Ponderación por peso acumulado
+            score += matchingPref.Weight * 2.0; // weight by accumulated preference weight
         }
 
-        // Popularidad general (Likes vs Dislikes)
-        int totalVotos = news.Likes + news.Dislikes;
-        if (totalVotos > 0)
+        // General popularity (likes vs dislikes)
+        int totalVotes = news.Likes + news.Dislikes;
+        if (totalVotes > 0)
         {
-            double ratioPopularidad = (double)news.Likes / totalVotos;
-            score += ratioPopularidad * 1.5;
+            double popularityRatio = (double)news.Likes / totalVotes;
+            score += popularityRatio * 1.5;
         }
 
-        // Penalización/Filtro SFW
+        // SFW penalty
         if (!news.IsSfw) score -= 10.0;
 
         return score;
     }
 
-    // 4. RETROALIMENTACIÓN (El usuario "le enseña" a la IA)
-    public async Task RegistrarInteraccionAsync(int userId, int newsId, bool liked, bool interested)
+    // 4. Feedback: user teaches the recommender
+    public async Task RegisterInteractionAsync(int userId, int newsId, bool liked, bool interested)
     {
-        var noticia = await _context.News.FindAsync(newsId);
-        if (noticia == null) return;
+        var news = await _context.News.FindAsync(newsId);
+        if (news == null) return;
 
-        // Actualizar estadísticas de la noticia
-        if (liked) noticia.Likes++;
-        else noticia.Dislikes++;
+        // Update news statistics
+        if (liked) news.Likes++;
+        else news.Dislikes++;
 
-        // Registrar en User_News
+        // Record in UserNews
         var userNews = new UserNews
         {
             IdUser = userId,
@@ -497,14 +512,14 @@ public class RecommendationEngine
         };
         _context.UserNews.Add(userNews);
 
-        // Ajustar dinámicamente el PESO (Weight) del Tag en Preferences del usuario
+        // Adjust dynamic weight for the user's preference tag
         var userPref = await _context.UserPreferences
             .Include(up => up.Preference)
-            .FirstOrDefaultAsync(up => up.IdUser == userId && up.Preference.IdTag == noticia.IdTag);
+            .FirstOrDefaultAsync(up => up.IdUser == userId && up.Preference.IdTag == news.IdTag);
 
         if (userPref != null)
         {
-            // Entrenar el peso: +1 si le gustó, -1 si le dio dislike
+            // Train weight: +1 if liked, -1 if disliked
             userPref.Preference.Weight += liked ? 1 : -1;
         }
 
