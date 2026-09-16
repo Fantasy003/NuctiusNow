@@ -22,9 +22,6 @@ public interface ILocalLlmService
     Task<List<(string Title, string Url, string Snippet)>> SearchWebAsync(string query, int maxResults = 5);
 }
 
-/// <summary>
-/// Simple HTTP client wrapper to call a local LLM REST endpoint.
-/// </summary>
 public class LocalLlmService : ILocalLlmService
 {
     private readonly IHttpClientFactory _httpFactory;
@@ -44,7 +41,7 @@ public class LocalLlmService : ILocalLlmService
         var endpointFromConfig = config.GetValue<string>("LocalLlm:Endpoint");
         if (string.IsNullOrWhiteSpace(endpointFromConfig))
         {
-            _endpoint = "http://169.254.39.114:1234/v1/completions";
+            _endpoint = "http://26.209.188.105:1234/v1/completions";
         }
         else if (Uri.IsWellFormedUriString(endpointFromConfig, UriKind.Absolute))
         {
@@ -52,13 +49,12 @@ public class LocalLlmService : ILocalLlmService
         }
         else
         {
-            // fallback to a safe default if config value is invalid
             _endpoint = "http://localhost:1234/v1/completions";
         }
 
         _maxConcurrency = config.GetValue<int?>("LocalLlm:MaxConcurrency") ?? 2;
         _batchSize = config.GetValue<int?>("LocalLlm:BatchSize") ?? 8;
-        _modelId = config.GetValue<string?>("LocalLlm:Model") ?? config.GetValue<string?>("LocalLlm:ModelId") ?? "gemma-3-4b-vl-it-gemini-pro-heretic-uncensored-thinking_gguf";
+        _modelId = config.GetValue<string?>("LocalLlm:Model") ?? config.GetValue<string?>("LocalLlm:ModelId") ?? "qwythos-9b-claude-mythos-5-1m";
         _semaphore = new SemaphoreSlim(_maxConcurrency, _maxConcurrency);
     }
 
@@ -77,7 +73,6 @@ public class LocalLlmService : ILocalLlmService
 
         if (!string.IsNullOrWhiteSpace(_modelId)) payload["model"] = _modelId;
 
-        // include plugin metadata so the LLM can use web-search if supported
         payload["plugin"] = new { type = "plugin", id = "greggg/web-search" };
 
         await _semaphore.WaitAsync();
@@ -122,7 +117,6 @@ public class LocalLlmService : ILocalLlmService
             var resultText = await ParseResponseTextAsync(resp.Content);
             if (string.IsNullOrWhiteSpace(resultText)) return null;
 
-            // Extract number from response
             var txt = new string(resultText.Where(c => char.IsDigit(c) || c == '.' || c == ',').ToArray()).Replace(',', '.');
             if (double.TryParse(txt, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var score))
             {
@@ -177,16 +171,15 @@ public class LocalLlmService : ILocalLlmService
 
                 try
                 {
-                    _logger.LogInformation("LocalLlmService.SummarizeBatchAsync raw response: {ResponseText}", text);
+                    if (_logger != null) 
+                        _logger.LogInformation("LocalLlmService.SummarizeBatchAsync raw response: {ResponseText}", text);
                 }
                 catch
                 {
-                    // swallow logging errors
                 }
 
                 var parts = text.Split(new[] { marker }, StringSplitOptions.RemoveEmptyEntries).Select(p => p.Trim()).ToList();
 
-                // If marker not present, fallback to splitting by double newlines
                 if (parts.Count != batch.Count)
                 {
                     parts = Regex.Split(text.Trim(), "\n\n+").Select(p => p.Trim()).Where(p => p.Length > 0).ToList();
@@ -236,13 +229,32 @@ public class LocalLlmService : ILocalLlmService
 
             try
             {
-                _logger?.LogInformation("SearchWebAsync raw LLM response: {Response}", text.Length > 500 ? text.Substring(0, 500) + "..." : text);
+                if (_logger != null) 
+                    _logger.LogInformation("SearchWebAsync raw LLM response: {Response}", text.Length > 500 ? text.Substring(0, 500) + "..." : text);
             }
             catch { }
 
             try
             {
-                using var doc = System.Text.Json.JsonDocument.Parse(text);
+                var jsonToParse = text.Trim();
+                
+                // Si el LLM devolvió markdown (ej. ```json ... ```), lo limpiamos
+                var matchCodeBlock = Regex.Match(jsonToParse, @"```(?:json)?\s*(\[.*?\])\s*```", RegexOptions.Singleline);
+                if (matchCodeBlock.Success)
+                {
+                    jsonToParse = matchCodeBlock.Groups[1].Value.Trim();
+                }
+                else
+                {
+                    // Intentar extraer solo el array si hay texto basura antes o despues
+                    var arrayMatch = Regex.Match(jsonToParse, @"\[\s*\{.*?\}\s*\]", RegexOptions.Singleline);
+                    if (arrayMatch.Success)
+                    {
+                        jsonToParse = arrayMatch.Value.Trim();
+                    }
+                }
+
+                using var doc = System.Text.Json.JsonDocument.Parse(jsonToParse);
                 if (doc.RootElement.ValueKind == System.Text.Json.JsonValueKind.Array)
                 {
                     foreach (var item in doc.RootElement.EnumerateArray().Take(maxResults))
@@ -251,23 +263,30 @@ public class LocalLlmService : ILocalLlmService
                         if (item.TryGetProperty("title", out var t) && t.ValueKind == System.Text.Json.JsonValueKind.String) title = t.GetString() ?? string.Empty;
                         if (item.TryGetProperty("url", out var u) && u.ValueKind == System.Text.Json.JsonValueKind.String) url = u.GetString() ?? string.Empty;
                         if (item.TryGetProperty("summary", out var s) && s.ValueKind == System.Text.Json.JsonValueKind.String) snippet = s.GetString() ?? string.Empty;
-                        results.Add((title, url, snippet));
+                        
+                        // Solo añadir si tiene al menos url o título (para evitar vacíos)
+                        if (!string.IsNullOrWhiteSpace(url) || !string.IsNullOrWhiteSpace(title))
+                        {
+                            results.Add((title, url, snippet));
+                        }
                     }
                     if (results.Count > 0)
                     {
-                        _logger?.LogInformation("SearchWebAsync: JSON parsing successful, found {Count} results", results.Count);
+                        if (_logger != null)
+                            _logger.LogInformation("SearchWebAsync: JSON parsing successful, found {Count} results", results.Count);
                         return results;
                     }
                 }
             }
             catch (Exception ex)
             {
-                _logger?.LogDebug(ex, "SearchWebAsync: JSON parsing failed, falling back to heuristic parsing");
+                if (_logger != null)
+                    _logger.LogDebug(ex, "SearchWebAsync: JSON parsing failed, falling back to heuristic parsing");
             }
 
-            // Heuristic parsing fallback
             var parts = Regex.Split(text.Trim(), "\n\n+").Select(p => p.Trim()).Where(p => p.Length > 0).ToList();
-            var urlRegex = new Regex(@"https?://[^\s]+", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+            // Updated Regex for LocalLlmService.cs
+            var urlRegex = new Regex(@"https?://[^\s\""',\\]+", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
             foreach (var part in parts.Take(maxResults))
             {
@@ -309,7 +328,9 @@ public class LocalLlmService : ILocalLlmService
                 }
                 catch (Exception ex)
                 {
-                    try { _logger.LogDebug(ex, "SearchWebAsync: URL-extraction fallback failed"); } catch { }
+                    try { 
+                        if (_logger != null) _logger.LogDebug(ex, "SearchWebAsync: URL-extraction fallback failed"); 
+                    } catch { }
                 }
             }
         }

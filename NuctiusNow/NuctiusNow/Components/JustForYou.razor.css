@@ -319,3 +319,29 @@
         padding: 2.5rem 0 0;
     }
 }
+
+.jfy-text-only {
+    padding: 1.25rem 0;
+}
+
+.jfy-text-only .news-title {
+    font-family: var(--font-editorial);
+    font-size: 1.35rem;
+    margin: 0.35rem 0 0.5rem;
+    color: var(--text-primary);
+}
+
+.jfy-text-only .news-body {
+    color: var(--text-secondary);
+    line-height: 1.55;
+    margin: 0;
+}
+
+.category-tag-inline {
+    display: inline-block;
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent);
+}

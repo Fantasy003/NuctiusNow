@@ -15,7 +15,14 @@
 ::deep .page-body {
     flex: 1;
     width: 100%;
-    padding-top: var(--nav-h); /* offset for sticky nav */
+    padding-top: 0; /* No padding on mobile/tablet */
+}
+
+/* Add padding to page-body on desktop when navbar is visible */
+@media (min-width: 1024px) {
+    ::deep .page-body {
+        padding-top: var(--nav-h); /* offset for sticky nav */
+    }
 }
 
 /* ── Top bar ── */
@@ -31,6 +38,7 @@
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
     background-color: rgba(15, 15, 15, 0.92);
+    display: none; /* Hidden on mobile/tablet by default */
 }
 
 /* Light theme nav */
@@ -73,16 +81,38 @@
     display: none; /* hidden on mobile */
     gap: 0.25rem;
     align-items: center;
+    background: rgba(18, 18, 18, 0.85); /* Dark transparent */
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-pill);
+    padding: 0.25rem 0.5rem;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+::deep .theme-light .nav-links {
+    background: rgba(255, 255, 255, 0.85);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
 .nav-link-item {
-    padding: 0.45rem 0.85rem;
+    padding: 0.4rem 1rem;
     border-radius: var(--radius-pill);
-    font-size: 0.875rem;
-    font-weight: 500;
+    font-size: 0.85rem;
+    font-weight: 600;
     color: var(--text-secondary);
     text-decoration: none;
-    transition: color 0.15s, background-color 0.15s;
+    transition: color 0.2s, background-color 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 0.35rem; /* For optional icon */
+}
+
+.nav-icon {
+    width: 18px;
+    height: 18px;
+    fill: currentColor;
+    flex-shrink: 0;
 }
 
 .nav-link-item:hover {
@@ -168,13 +198,38 @@
     background-color: var(--accent-glow);
 }
 
-/* ── Desktop: show links, hide hamburger ── */
-@media (min-width: 768px) {
+/* ── Desktop: show navbar, hide hamburger ── */
+@media (min-width: 1024px) {
+    .top-nav {
+        display: flex; /* Show navbar on desktop */
+        display: block; /* Show navbar on desktop */
+    }
+
     .nav-links {
         display: flex;
     }
 
     .hamburger {
         display: none;
+    }
+
+    /* Hide mobile dropdown on desktop */
+    .mobile-dropdown {
+        display: none !important;
+    }
+
+    .top-nav-inner {
+        justify-content: space-between;
+        max-width: 100%;
+    }
+
+    .nav-logo {
+        margin-left: 0;
+        margin-right: auto;
+    }
+
+    .nav-links {
+        margin-right: 0;
+        margin-left: auto;
     }
 }

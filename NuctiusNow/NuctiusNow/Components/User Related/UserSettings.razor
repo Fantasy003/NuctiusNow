@@ -17,6 +17,12 @@
 else
 {
     <div class="settings-page-container">
+        <div class="back-nav">
+            <button class="btn-back" @onclick="GoBack">
+                <svg viewBox="0 0 24 24" class="back-icon"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
+                Back
+            </button>
+        </div>
 
         <div class="settings-card">
 
@@ -117,7 +123,7 @@ else
 <!-- Sticky save bar for mobile -->
 <div class="sticky-save">
     <button class="btn-action btn-logout" @onclick="HandleLogout">Logout</button>
-    <button class="btn-action btn-apply" @onclick="SaveChanges">Apply Changes</button>
+    <button class="btn-action btn-apply" @onclick="SaveChanges" disabled="@isSaving">Apply Changes</button>
 </div>
 
 @if (isThemeModalOpen)
@@ -182,7 +188,6 @@ else
 @code {
     private SettingsFields userModel = new();
 
-    // Modal and input state
     private bool isThemeModalOpen = false;
     private bool isPrefModalOpen = false;
     private string newPreferenceInput = "";
@@ -191,7 +196,6 @@ else
     private bool isSaving = false;
     private bool isLoggingOut = false;
 
-    // Basic blocklist of disallowed words
     private readonly HashSet<string> blocklist = new(StringComparer.OrdinalIgnoreCase)
     {
         "mierda", "puto", "puta", "carajo", "pelotudo", "boludo", "concha", "forro", "culiao"
@@ -232,6 +236,11 @@ else
         }
     }
 
+    private async Task GoBack()
+    {
+        await JSRuntime.InvokeVoidAsync("history.back");
+    }
+
     private void OpenThemeModal() => isThemeModalOpen = true;
     private void CloseThemeModal() => isThemeModalOpen = false;
 
@@ -242,7 +251,6 @@ else
         isThemeModalOpen = false;
     }
 
-    // Preference modal logic
     private void OpenPreferenceModal()
     {
         newPreferenceInput = "";
@@ -262,14 +270,12 @@ else
 
         string cleanInput = newPreferenceInput.Trim();
 
-        // Prevent duplicates
         if (userModel.Preferences.Any(p => p.Equals(cleanInput, StringComparison.OrdinalIgnoreCase)))
         {
             validationMessage = "This preference already exists.";
             return;
         }
 
-        // Check blocklist for disallowed words
         foreach (var badWord in blocklist)
         {
             if (cleanInput.Contains(badWord, StringComparison.OrdinalIgnoreCase))
@@ -279,12 +285,10 @@ else
             }
         }
 
-        // If the input is valid, add and close the modal
         userModel.Preferences.Add(cleanInput);
         isPrefModalOpen = false;
     }
 
-    // Allow saving by pressing Enter in the input
     private void HandlePrefKeyUp(KeyboardEventArgs e)
     {
         if (e.Key == "Enter")
@@ -345,7 +349,6 @@ else
         isLoggingOut = true;
         try
         {
-            // Clear client session and navigate to login
             await sessionService.ClearAsync();
             Navigation.NavigateTo("/login", true);
         }

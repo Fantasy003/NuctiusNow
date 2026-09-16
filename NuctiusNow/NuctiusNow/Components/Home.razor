@@ -1,143 +1,129 @@
 @page "/"
 
+@using Microsoft.EntityFrameworkCore
+@using System.Collections.Concurrent
+@using NuctiusNow.Data
+@using NuctiusNow.Services
+@using NuctiusNow.Components.User_Related
+@inject ApplicationDbContext DbContext
 @inject UserSessionService sessionService
+@inject RecommendationEngine RecommendationEngine
 @inject NavigationManager Navigation
 
-<PageTitle>NuctiusNow</PageTitle>
+<PageTitle>NuctiusNow - Home</PageTitle>
 
-<div class="home-page">
+<div class="home-container">
+    <header class="home-header">
+        <h1 class="home-heading">Latest Personalized News</h1>
+        <p class="home-subheading">Selected by our AI engine based on your interests.</p>
+    </header>
 
-    <!-- Page header -->
-    <div class="home-header">
-        <h1 class="home-heading">Top Stories</h1>
-        <p class="home-subheading">Browse by category</p>
-    </div>
-
-    <!-- Category grid -->
     <div class="categories-grid">
-        @foreach (var cat in Categorias)
+        @foreach (var cat in Categories)
         {
-            var imagenACargar = !string.IsNullOrEmpty(cat.ImagenNoticiaIA)
-            ? cat.ImagenNoticiaIA
-            : cat.ImagenUrlRespaldoInternet;
+            var isLoading = _isLoading.GetValueOrDefault(cat.Name, false);
+            var hottestNews = _hottestNewsByCategory.GetValueOrDefault(cat.Name);
 
-            <a href="/news/@cat.Id" class="category-card-link">
-                <div class="category-card" style="background-image: url('@imagenACargar');">
+            <div class="category-card-link" role="button" tabindex="0"
+                 @onclick="async () => await OpenCategoryNews(cat.Name, hottestNews)"
+                 @onkeydown="@(async e => { if (e.Key == "Enter") await OpenCategoryNews(cat.Name, hottestNews); })">
+                <div class="category-card" style="background-image: url('@cat.BackupImageUrl');">
                     <div class="card-overlay"></div>
                     <div class="card-content">
-                        <span class="category-tag-pill">@cat.Nombre</span>
-                        <h2 class="category-title">@cat.Nombre.ToUpper()</h2>
+                        @if (isLoading)
+                        {
+                            <span class="category-tag-pill">@cat.Name</span>
+                            <h2 class="category-title">Loading...</h2>
+                        }
+                        else if (hottestNews != null)
+                        {
+                            <span class="category-tag-pill">@cat.Name</span>
+                            <h2 class="category-title">@(hottestNews.DetailNews?.Keyword ?? "No Title Available")</h2>
+                            <span class="news-meta">@hottestNews.CapturedDate.ToString("dd MMM yyyy")</span>
+                        }
+                        else
+                        {
+                            <span class="category-tag-pill">@cat.Name</span>
+                            <h2 class="category-title">@cat.Name.ToUpper()</h2>
+                            <span class="news-meta">No recent news</span>
+                        }
                     </div>
                 </div>
-            </a>
+            </div>
         }
     </div>
-
-    <!-- Mobile bottom navigation -->
-    <nav class="bottom-nav" role="navigation" aria-label="Bottom navigation">
-        <a href="/" class="bottom-nav-item active">
-            <svg viewBox="0 0 24 24" class="bnav-icon" aria-hidden="true"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
-            <span>Home</span>
-        </a>
-        <a href="/just-for-you" class="bottom-nav-item">
-            <svg viewBox="0 0 24 24" class="bnav-icon" aria-hidden="true"><path d="M12 21.593c-5.63-5.539-11-10.297-11-14.402 0-3.791 3.068-5.191 5.281-5.191 1.312 0 4.151.501 5.719 4.457 1.59-3.968 4.464-4.447 5.726-4.447 2.54 0 5.274 1.621 5.274 5.181 0 4.069-5.136 8.625-11 14.402z"/></svg>
-            <span>For You</span>
-        </a>
-        <a href="/search" class="bottom-nav-item">
-            <svg viewBox="0 0 24 24" class="bnav-icon" aria-hidden="true"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C8.01 14 6 11.99 6 9.5S8.01 5 10.5 5 15 7.01 15 9.5 12.99 14 10.5 14z" /></svg>
-            <span>Search</span>
-        </a>
-        <a href="/user-settings" class="bottom-nav-item">
-            <svg viewBox="0 0 24 24" class="bnav-icon" aria-hidden="true"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
-            <span>Settings</span>
-        </a>
-    </nav>
-
 </div>
 
 @code {
-    private bool isUserLoggedIn = true;
-    private bool isPremium = true;
+    private List<Category> Categories { get; set; } = new();
+    private readonly ConcurrentDictionary<string, bool> _isLoading = new();
+    private readonly ConcurrentDictionary<string, News?> _hottestNewsByCategory = new();
 
-    protected override async Task OnAfterRenderAsync(bool firstRender)
+    protected override async Task OnInitializedAsync()
     {
-        if (!firstRender) return;
-
         await sessionService.InitializeAsync();
-        if (!sessionService.IsAuthenticated)
+
+        var mapping = InternetSearchService.GetCategoryMapping();
+        Categories = mapping.Select(m => new Category(m.Category, $"https://source.unsplash.com/random/500x500/?{m.Category}")).ToList();
+
+        foreach (var category in mapping.Select(x => x.Category).ToList())
         {
-            Navigation.NavigateTo("/login", true);
+            _isLoading[category] = true;
+            _hottestNewsByCategory[category] = null;
+        }
+
+        foreach (var category in mapping.Select(x => x.Category).ToList())
+        {
+            _ = LoadCategoryNewsAsync(category);
         }
     }
 
-    public class CategoriaModel
+    private async Task LoadCategoryNewsAsync(string category)
     {
-        public string Id { get; set; } = string.Empty;
-        public string Nombre { get; set; } = string.Empty;
-        public string ImagenNoticiaIA { get; set; } = string.Empty;
-        public string ImagenUrlRespaldoInternet { get; set; } = string.Empty;
-    }
+        _isLoading[category] = true;
+        await InvokeAsync(StateHasChanged);
 
-    private List<CategoriaModel> Categorias = new();
-
-    protected override void OnInitialized()
-    {
-        Categorias = new List<CategoriaModel>
+        try
         {
-            new CategoriaModel {
-                Id = "politics",
-                Nombre = "Politics",
-                ImagenNoticiaIA = "",
-                ImagenUrlRespaldoInternet = "https://images.unsplash.com/photo-1540910419892-4a36d2c3266c?w=600&q=80"
-            },
-            new CategoriaModel {
-                Id = "sports",
-                Nombre = "Sports",
-                ImagenNoticiaIA = "",
-                ImagenUrlRespaldoInternet = "https://images.unsplash.com/photo-1508098682722-e99c43a406b2?w=600&q=80"
-            },
-            new CategoriaModel {
-                Id = "technology",
-                Nombre = "Technology",
-                ImagenNoticiaIA = "",
-                ImagenUrlRespaldoInternet = "https://images.unsplash.com/photo-1518770660439-4636190af475?w=600&q=80"
-            },
-            new CategoriaModel {
-                Id = "economy",
-                Nombre = "Economy",
-                ImagenNoticiaIA = "",
-                ImagenUrlRespaldoInternet = "https://images.unsplash.com/photo-1590283603385-17ffb3a7f29f?w=600&q=80"
-            },
-            new CategoriaModel {
-                Id = "health",
-                Nombre = "Health",
-                ImagenNoticiaIA = "",
-                ImagenUrlRespaldoInternet = "https://images.unsplash.com/photo-1505751172876-fa1923c5c528?w=600&q=80"
-            },
-            new CategoriaModel {
-                Id = "education",
-                Nombre = "Education",
-                ImagenNoticiaIA = "",
-                ImagenUrlRespaldoInternet = "https://images.unsplash.com/photo-1427504494785-3a9ca7044f45?w=600&q=80"
-            },
-            new CategoriaModel {
-                Id = "turism",
-                Nombre = "Tourism",
-                ImagenNoticiaIA = "",
-                ImagenUrlRespaldoInternet = "https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?w=600&q=80"
-            },
-            new CategoriaModel {
-                Id = "culture",
-                Nombre = "Culture",
-                ImagenNoticiaIA = "",
-                ImagenUrlRespaldoInternet = "https://images.unsplash.com/photo-1460661419201-fd4cecdf8a8b?w=600&q=80"
-            },
-            new CategoriaModel {
-                Id = "society",
-                Nombre = "Society",
-                ImagenNoticiaIA = "",
-                ImagenUrlRespaldoInternet = "https://images.unsplash.com/photo-1517486808906-6ca8b3f04846?w=600&q=80"
+            var news = await RecommendationEngine.ExecuteAiSearchForCategoryAsync(category);
+
+            if (news == null)
+            {
+                news = await DbContext.News
+                    .Include(n => n.Tag)
+                    .Include(n => n.DetailNews)
+                    .Where(n => n.Tag != null && n.Tag.Name == category)
+                    .OrderByDescending(n => n.CapturedDate)
+                    .FirstOrDefaultAsync();
             }
-        };
+
+            _hottestNewsByCategory[category] = news;
+        }
+        catch
+        {
+            // Mantener estado vacío para la categoría si falla la IA
+        }
+        finally
+        {
+            _isLoading[category] = false;
+            await InvokeAsync(StateHasChanged);
+        }
     }
+
+    private async Task OpenCategoryNews(string category, News? news)
+    {
+        if (news == null || news.IdNews <= 0)
+        {
+            return;
+        }
+
+        if (sessionService.IsAuthenticated && sessionService.UserId.HasValue)
+        {
+            await RecommendationEngine.RegisterCategoryClickAsync(sessionService.UserId.Value, news.IdNews);
+        }
+
+        Navigation.NavigateTo($"/news-detail/{news.IdNews}");
+    }
+
+    public record Category(string Name, string BackupImageUrl);
 }

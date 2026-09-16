@@ -2,7 +2,8 @@
    HOME PAGE — Mobile-First Category Grid
    ============================================================ */
 
-.home-page {
+.home-page,
+.home-container {
     min-height: calc(100vh - var(--nav-h));
     padding: 0 0 calc(var(--bottom-nav-h) + 16px) 0;
     background-color: var(--bg-page);
@@ -113,6 +114,16 @@
     margin: 0;
     text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8);
     line-height: 1.2;
+}
+
+.news-meta {
+    font-size: 0.75rem;
+    color: rgba(255, 255, 255, 0.85);
+    letter-spacing: 0.04em;
+}
+
+.category-card-link {
+    cursor: pointer;
 }
 
 /* ── Hover interactions ── */

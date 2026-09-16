@@ -28,6 +28,10 @@ builder.Services.AddScoped<RecommendationEngine>();
 builder.Services.AddScoped<ILocalLlmService, LocalLlmService>();
 // Servicio para almacenar noticias capturadas desde la web
 builder.Services.AddScoped<NewsIngestService>();
+// Servicio para cargar detalles de noticias y comentarios
+builder.Services.AddScoped<NewsDetailService>();
+//Servicio de busqueda
+builder.Services.AddScoped<InternetSearchService>();
 // Register HttpClient factory for server-side HTTP calls (reCAPTCHA verification)
 builder.Services.AddHttpClient();
 
@@ -54,7 +58,6 @@ app.UseAntiforgery();
 // 3. MAPEO DE BLAZOR
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode()
-    .AddInteractiveWebAssemblyRenderMode()
-    .AddAdditionalAssemblies(typeof(NuctiusNow.Client._Imports).Assembly);
+    .AddInteractiveWebAssemblyRenderMode();
 
 app.Run();

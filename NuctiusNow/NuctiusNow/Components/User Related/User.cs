@@ -18,6 +18,7 @@ public class User
     public string Email { get; set; } = string.Empty;
 
     [Column("birthday")]
+    [Timestamp]
     public DateTime? Birthday { get; set; }
 
     [Column("language")]

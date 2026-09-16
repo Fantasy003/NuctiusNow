@@ -385,3 +385,10 @@
         gap: 2rem;
     }
 }
+
+/* Hide bottom nav on desktop */
+@media (min-width: 1024px) {
+    .bottom-nav {
+        display: none !important;
+    }
+}

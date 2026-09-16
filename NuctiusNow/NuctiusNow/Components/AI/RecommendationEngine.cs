@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using NuctiusNow.Components.User_Related;
 using NuctiusNow.Data;
 
@@ -19,9 +19,6 @@ public class RecommendationEngine
         _logger = logger;
     }
 
-    // Helper methods for preference lookup and text summarization are defined below.
-
-    // Helper: summarize plain text via underlying LLM service
     public async Task<string> SummarizeTextAsync(string text, int maxChars = 220)
     {
         if (_llmService == null) return text.Length <= maxChars ? text : text.Substring(0, maxChars) + "...";
@@ -34,32 +31,30 @@ public class RecommendationEngine
         return text.Length <= maxChars ? text : text.Substring(0, maxChars) + "...";
     }
 
-    /// <summary>
-    /// Explicit 5-step workflow:
-    /// 1. Receive user preferences from DB
-    /// 2. Search the internet for those preferences
-    /// 3. Select the first matching news
-    /// 4. Read and summarize the body content
-    /// 5. Save to DetailNews
-    /// </summary>
     public async Task<List<string>> ExecuteNewsSearchWorkflowAsync(int userId, int numSearches = 4)
     {
         var ingested = new List<string>();
-        if (_llmService == null || _newsIngest == null)
+        
+        // Setup local references to remove "possibly null" dereference warnings later on
+        var llm = _llmService;
+        var ingest = _newsIngest;
+        if (llm == null || ingest == null)
         {
             _logger?.LogError("ExecuteNewsSearchWorkflowAsync: LLM or NewsIngestService not available");
             return ingested;
         }
 
-        // STEP 1: Load user preferences from DB
         _logger?.LogInformation("STEP 1: Loading user preferences for userId={UserId}", userId);
-        var userPreferences = await _context.UserPreferences
+        
+        var userPreferencesList = await _context.UserPreferences
             .Include(up => up.Preference)
             .Where(up => up.IdUser == userId)
-            .Select(up => up.Preference)
             .ToListAsync();
+            
+        // Clean out possible nulls structurally to ensure the engine functions correctly
+        var userPreferences = userPreferencesList.Select(up => up.Preference!).Where(p => p != null).ToList();
 
-        if (userPreferences == null || userPreferences.Count == 0)
+        if (userPreferences.Count == 0)
         {
             _logger?.LogError("STEP 1: No preferences found for user {UserId}", userId);
             return ingested;
@@ -72,20 +67,20 @@ public class RecommendationEngine
         int searchCount = 0;
         int prefIndex = 0;
 
-        // STEP 2-5: Search and ingest for each preference
         while (ingested.Count < numSearches && searchCount < numSearches * 2)
         {
             var pref = topPrefs.Count > 0 ? topPrefs[prefIndex % topPrefs.Count] : userPreferences.First();
-            var topic = pref.Tag?.Name ?? pref.IdTag.ToString();
+            
+            // Fixed CS8602: added null propagation
+            var topic = pref?.Tag?.Name ?? pref?.IdTag.ToString() ?? "News";
             var query = $"{topic}";
 
-            // STEP 2: Search the internet
             _logger?.LogInformation("STEP 2: Searching for preference '{Topic}' (query='{Query}')", topic, query);
             List<(string Title, string Url, string Snippet)> results = new();
             try
             {
-                results = await _llmService.SearchWebAsync(query, 1);
-                _logger?.LogInformation("STEP 2: Search returned {Count} results for query '{Query}'", results?.Count ?? 0, query);
+                results = await llm.SearchWebAsync(query, 1);
+                _logger?.LogInformation("STEP 2: Search returned {Count} results for query '{Query}'", results.Count, query);
             }
             catch (Exception ex)
             {
@@ -95,8 +90,7 @@ public class RecommendationEngine
                 continue;
             }
 
-            // STEP 3: Select first matching news
-            if (results == null || results.Count == 0)
+            if (results.Count == 0)
             {
                 _logger?.LogWarning("STEP 3: No results returned for query '{Query}'", query);
                 prefIndex++;
@@ -104,44 +98,33 @@ public class RecommendationEngine
                 continue;
             }
 
-            var firstResult = results[0];
-            _logger?.LogInformation("STEP 3: Selected first result - Title: {Title}, URL: {Url}", firstResult.Title, firstResult.Url);
-
+            var firstResult = results.FirstOrDefault(r => !string.IsNullOrWhiteSpace(r.Url) && !ingested.Contains(r.Url));
             if (string.IsNullOrWhiteSpace(firstResult.Url))
             {
-                _logger?.LogWarning("STEP 3: Selected result has no URL");
+                _logger?.LogWarning("STEP 3: No valid or new URL found in results");
                 prefIndex++;
                 searchCount++;
                 continue;
             }
 
-            if (ingested.Contains(firstResult.Url))
-            {
-                _logger?.LogInformation("STEP 3: URL already ingested, skipping: {Url}", firstResult.Url);
-                prefIndex++;
-                searchCount++;
-                continue;
-            }
+            _logger?.LogInformation("STEP 3: Selected result - Title: {Title}, URL: {Url}", firstResult.Title, firstResult.Url);
 
-            // STEP 4: Summarize the body content
             _logger?.LogInformation("STEP 4: Summarizing content from URL {Url}", firstResult.Url);
             string summary = firstResult.Snippet ?? string.Empty;
             if (string.IsNullOrWhiteSpace(summary))
             {
-                // If snippet is empty, use title as fallback
                 summary = firstResult.Title;
             }
             _logger?.LogInformation("STEP 4: Summary obtained (length={Length})", summary.Length);
 
-            // STEP 5: Save to DetailNews via NewsIngestService
-            _logger?.LogInformation("STEP 5: Ingesting news - URL: {Url}, Title: {Title}, TagId: {TagId}", firstResult.Url, firstResult.Title, pref.IdTag);
+            _logger?.LogInformation("STEP 5: Ingesting news - URL: {Url}, Title: {Title}, TagId: {TagId}", firstResult.Url, firstResult.Title, pref?.IdTag);
             try
             {
-                await _newsIngest.SaveOrUpdateNewsAsync(
+                await ingest.SaveOrUpdateNewsAsync(
                     firstResult.Url,
                     summary,
                     firstResult.Title,
-                    pref.IdTag,
+                    pref?.IdTag ?? 1,
                     isSfw: true,
                     secureLink: true,
                     isAi: true,
@@ -163,27 +146,27 @@ public class RecommendationEngine
         return ingested;
     }
 
-    /// <summary>
-    /// Trigger a plugin-enabled web search using top user preferences and ingest found results into the DB.
-    /// Returns the list of ingested URLs (may be empty).
-    /// </summary>
 
     public async Task<List<string>> SearchAndIngestForUserAsync(int userId, int perPref = 1, int maxTotal = 4)
     {
         var ingested = new List<string>();
-        if (_llmService == null || _newsIngest == null)
+        
+        var llm = _llmService;
+        var ingest = _newsIngest;
+        if (llm == null || ingest == null)
         {
             _logger?.LogInformation("SearchAndIngestForUserAsync: LLM service or NewsIngestService not available");
             return ingested;
         }
 
-        var userPreferences = await _context.UserPreferences
+        var userPreferencesList = await _context.UserPreferences
             .Include(up => up.Preference)
             .Where(up => up.IdUser == userId)
-            .Select(up => up.Preference)
             .ToListAsync();
+            
+        var userPreferences = userPreferencesList.Select(up => up.Preference!).Where(p => p != null).ToList();
 
-        if (userPreferences == null || userPreferences.Count == 0)
+        if (userPreferences.Count == 0)
         {
             _logger?.LogInformation("SearchAndIngestForUserAsync: no preferences for user {UserId}", userId);
             return ingested;
@@ -191,19 +174,18 @@ public class RecommendationEngine
 
         var topPrefs = userPreferences.OrderByDescending(p => p.Weight).Take(3).ToList();
 
-        // Perform up to maxTotal searches, rotating across top preferences so we get varied topics.
         int attempts = 0;
         int prefIndex = 0;
         while (ingested.Count < maxTotal && attempts < maxTotal * 2)
         {
             var pref = topPrefs.Count > 0 ? topPrefs[prefIndex % topPrefs.Count] : userPreferences.First();
-            var topic = pref.Tag?.Name ?? pref.IdTag.ToString();
+            var topic = pref?.Tag?.Name ?? pref?.IdTag.ToString() ?? "News";
             var query = $"{topic} news";
             List<(string Title, string Url, string Snippet)> results = new();
             try
             {
-                results = await _llmService.SearchWebAsync(query, perPref);
-                _logger?.LogInformation("SearchAndIngestForUserAsync: search '{Query}' returned {Count}", query, results?.Count ?? 0);
+                results = await llm.SearchWebAsync(query, perPref);
+                _logger?.LogInformation("SearchAndIngestForUserAsync: search '{Query}' returned {Count}", query, results.Count);
             }
             catch (Exception ex)
             {
@@ -211,11 +193,12 @@ public class RecommendationEngine
             }
 
             var first = results.FirstOrDefault();
+            
             if (!string.IsNullOrWhiteSpace(first.Url) && !ingested.Contains(first.Url))
             {
                 try
                 {
-                    await _newsIngest.SaveOrUpdateNewsAsync(first.Url, first.Snippet, first.Title, pref.IdTag, isSfw: true, secureLink: true, isAi: true, newsDate: DateTime.UtcNow);
+                    await ingest.SaveOrUpdateNewsAsync(first.Url, first.Snippet, first.Title, pref?.IdTag ?? 1, isSfw: true, secureLink: true, isAi: true, newsDate: DateTime.UtcNow);
                     ingested.Add(first.Url);
                     _logger?.LogInformation("SearchAndIngestForUserAsync: ingested url {Url}", first.Url);
                 }
@@ -232,18 +215,15 @@ public class RecommendationEngine
         return ingested;
     }
 
-    // Returns the top recommended news for a user
-    // days: lookback window in days (e.g. last 30 days)
     public async Task<List<News>> GetRecommendationsForUserAsync(int userId, int cantidad = 10, int days = 30)
     {
-        // 1. Cargar preferencias del usuario (Tags y sus pesos acumulados)
-        var userPreferences = await _context.UserPreferences
+        var userPreferencesList = await _context.UserPreferences
             .Include(up => up.Preference)
             .Where(up => up.IdUser == userId)
-            .Select(up => up.Preference)
             .ToListAsync();
+            
+        var userPreferences = userPreferencesList.Select(up => up.Preference!).Where(p => p != null).ToList();
 
-        // 2. Obtener noticias que el usuario AÚN NO HA VISTO
         var noticiasVistasIds = await _context.UserNews
             .Where(un => un.IdUser == userId && un.Seen)
             .Select(un => un.IdNews)
@@ -257,32 +237,32 @@ public class RecommendationEngine
             .Where(n => !noticiasVistasIds.Contains(n.IdNews) && n.CapturedDate >= fechaLimite)
             .ToListAsync();
 
-        // If no local news candidates are available, try to use the LLM+plugin to search the web
-        if ((noticiasCandidatas == null || noticiasCandidatas.Count == 0) && _llmService != null && _newsIngest != null)
+        var llm = _llmService;
+        var ingest = _newsIngest;
+
+        if (noticiasCandidatas.Count == 0 && llm != null && ingest != null)
         {
             try
             {
-                // Build queries from top user preferences
                 var topPrefs = userPreferences.OrderByDescending(p => p.Weight).Take(3).ToList();
                 if (topPrefs.Count == 0) topPrefs = userPreferences.Take(1).ToList();
 
                 foreach (var pref in topPrefs)
                 {
-                    var topic = pref.Tag?.Name ?? pref.IdTag.ToString();
+                    var topic = pref?.Tag?.Name ?? pref?.IdTag.ToString() ?? "News";
                     var query = $"{topic} news";
-                    var searchResults = await _llmService.SearchWebAsync(query, 5);
+                    var searchResults = await llm.SearchWebAsync(query, 5);
                     try
                     {
-                        _logger?.LogInformation("Search for '{Query}' returned {Count} results", query, searchResults?.Count ?? 0);
+                        _logger?.LogInformation("Search for '{Query}' returned {Count} results", query, searchResults.Count);
                     }
                     catch { }
                     foreach (var res in searchResults)
                     {
                         if (string.IsNullOrWhiteSpace(res.Url)) continue;
-                        // Save or update into DB as AI-ingested news so RecommendationEngine can later rank them
                         try
                         {
-                            await _newsIngest.SaveOrUpdateNewsAsync(res.Url, res.Snippet, res.Title, pref.IdTag, isSfw: true, secureLink: true, isAi: true, newsDate: DateTime.UtcNow);
+                            await ingest.SaveOrUpdateNewsAsync(res.Url, res.Snippet, res.Title, pref?.IdTag ?? 1, isSfw: true, secureLink: true, isAi: true, newsDate: DateTime.UtcNow);
                             try { _logger?.LogInformation("Ingested candidate: {Url}", res.Url); } catch { }
                         }
                         catch
@@ -292,7 +272,6 @@ public class RecommendationEngine
                     }
                 }
 
-                // Refresh candidates after ingestion
                 noticiasCandidatas = await _context.News
                     .Include(n => n.Tag)
                     .Include(n => n.DetailNews)
@@ -301,24 +280,20 @@ public class RecommendationEngine
             }
             catch
             {
-                // ignore search/ingest errors and continue with empty candidates
             }
         }
 
-        // 3. Algoritmo de Scoring / Ponderación ML (base score)
         var scored = noticiasCandidatas.Select(news => new
         {
             Noticia = news,
             BaseScore = CalculateScore(news, userPreferences)
         }).ToList();
 
-        // If no LLM available, fall back to base scoring
-        if (_llmService == null)
+        if (llm == null)
         {
             return scored.OrderByDescending(x => x.BaseScore).Select(x => x.Noticia).Take(cantidad).ToList();
         }
 
-        // Build a lightweight user profile string for the LLM
         var user = await _context.Users.FindAsync(userId);
         var profileParts = userPreferences.Select(p => $"{p.Tag?.Name ?? p.IdTag.ToString()}:{p.Weight}").ToList();
         if (user != null)
@@ -328,21 +303,20 @@ public class RecommendationEngine
         }
         var userProfile = string.Join("; ", profileParts);
 
-        // Choose a pool of top candidates by base score to send to the LLM for re-ranking
         var rerankPoolSize = Math.Min(scored.Count, Math.Max(cantidad * 3, 20));
         var rerankPool = scored.OrderByDescending(x => x.BaseScore).Take(rerankPoolSize).ToList();
 
-        // Prepare candidate texts for the LLM and collect detail news that may need summaries cached
         var candidateTexts = new List<string>();
         var detailsToSummarize = new List<DetailNews>();
+        
         foreach (var item in rerankPool)
         {
             var n = item.Noticia;
-            var detail = n.DetailNews;
+            var detail = n?.DetailNews;
             var excerpt = detail?.Context ?? string.Empty;
             if (!string.IsNullOrWhiteSpace(excerpt) && excerpt.Length > 600) excerpt = excerpt.Substring(0, 600) + "...";
 
-            var text = $"Title: {detail?.Keyword ?? ""}\nTag: {n.Tag?.Name ?? ""}\nExcerpt: {excerpt}";
+            var text = $"Title: {detail?.Keyword ?? ""}\nTag: {n?.Tag?.Name ?? ""}\nExcerpt: {excerpt}";
             candidateTexts.Add(text);
 
             if (detail != null && string.IsNullOrWhiteSpace(detail.AiSummary))
@@ -351,11 +325,10 @@ public class RecommendationEngine
             }
         }
 
-        // 4. Caching: summarize missing detail news via LLM in batches and persist the summaries
         if (detailsToSummarize.Count > 0)
         {
             var textsForSumm = detailsToSummarize.Select(d => d.Context ?? string.Empty).ToList();
-            var summaries = await _llmService.SummarizeBatchAsync(textsForSumm, 220);
+            var summaries = await llm.SummarizeBatchAsync(textsForSumm, 220);
             var changed = false;
             for (int i = 0; i < detailsToSummarize.Count; i++)
             {
@@ -372,17 +345,15 @@ public class RecommendationEngine
             }
         }
 
-        // 5. Use the LLM to score / re-rank candidates in batches
         var llmScores = new List<double?>();
-        const int localBatchSize = 8; // fallback batch size
+        const int localBatchSize = 8; 
         for (int i = 0; i < candidateTexts.Count; i += localBatchSize)
         {
             var batch = candidateTexts.Skip(i).Take(localBatchSize).ToList();
-            var batchScores = await _llmService.BatchScoreAsync(userProfile, batch);
+            var batchScores = await llm.BatchScoreAsync(userProfile, batch);
             llmScores.AddRange(batchScores);
         }
 
-        // Combine base score and LLM score
         var combined = new List<(News Noticia, double Score)>();
         for (int i = 0; i < rerankPool.Count; i++)
         {
@@ -391,7 +362,6 @@ public class RecommendationEngine
             var llmScore = (i < llmScores.Count) ? llmScores[i] : null;
             if (llmScore.HasValue)
             {
-                // Scale LLM score to influence final ranking (tunable multiplier)
                 llmPart = (llmScore.Value / 100.0) * 5.0;
             }
 
@@ -402,36 +372,34 @@ public class RecommendationEngine
         return final;
     }
 
-    // Async summarization: tries to use the local LLM service if registered, falls back to the simple Summarize()
     public async Task<string> SummarizeAsync(DetailNews? detail, int maxChars = 220)
     {
         var fallback = Summarize(detail, maxChars);
-        if (_llmService == null) return fallback;
+        var llm = _llmService;
+        
+        if (llm == null) return fallback;
 
         var text = detail?.Context ?? string.Empty;
         try
         {
-            var llmResult = await _llmService.SummarizeAsync(text, maxChars);
+            var llmResult = await llm.SummarizeAsync(text, maxChars);
             if (!string.IsNullOrWhiteSpace(llmResult)) return llmResult;
         }
         catch
         {
-            // ignore LLM errors and return fallback summary
         }
 
         return fallback;
     }
 
-    /// <summary>
-    /// Summarizes a direct text prompt using the LLM service.
-    /// </summary>
     public async Task<string> SummarizeAsync(string prompt, int maxChars = 220)
     {
-        if (_llmService == null) return string.Empty;
+        var llm = _llmService;
+        if (llm == null) return string.Empty;
 
         try
         {
-            var llmResult = await _llmService.SummarizeAsync(prompt, maxChars);
+            var llmResult = await llm.SummarizeAsync(prompt, maxChars);
             return string.IsNullOrWhiteSpace(llmResult) ? string.Empty : llmResult;
         }
         catch (Exception ex)
@@ -441,7 +409,6 @@ public class RecommendationEngine
         }
     }
 
-    // Simple summarization helper: returns the first few sentences or a trimmed substring
     public string Summarize(DetailNews? detail, int maxChars = 220)
     {
         if (detail == null) return string.Empty;
@@ -449,7 +416,6 @@ public class RecommendationEngine
         var text = detail.Context ?? string.Empty;
         if (string.IsNullOrWhiteSpace(text)) return string.Empty;
 
-        // Try to take the first 2 sentences
         var sentences = text.Split(new[] { '.', '!', '?' }, StringSplitOptions.RemoveEmptyEntries)
             .Select(s => s.Trim())
             .Where(s => s.Length > 0)
@@ -461,23 +427,22 @@ public class RecommendationEngine
             if (summary.Length <= maxChars) return summary;
         }
 
-        // Fallback: trim to maxChars
         if (text.Length <= maxChars) return text;
         return text.Substring(0, maxChars).TrimEnd() + "...";
     }
 
-    private double CalculateScore(News news, List<Preference> userPreferences)
+    private double CalculateScore(News? news, List<Preference> userPreferences)
     {
+        if (news == null) return 0.0;
+        
         double score = 0.0;
 
-        // Match by Tag/Category
-        var matchingPref = userPreferences.FirstOrDefault(p => p.IdTag == news.IdTag);
+        var matchingPref = userPreferences.FirstOrDefault(p => p != null && p.IdTag == news.IdTag);
         if (matchingPref != null)
         {
-            score += matchingPref.Weight * 2.0; // weight by accumulated preference weight
+            score += matchingPref.Weight * 2.0; 
         }
 
-        // General popularity (likes vs dislikes)
         int totalVotes = news.Likes + news.Dislikes;
         if (totalVotes > 0)
         {
@@ -485,59 +450,368 @@ public class RecommendationEngine
             score += popularityRatio * 1.5;
         }
 
-        // SFW penalty
         if (!news.IsSfw) score -= 10.0;
 
         return score;
     }
 
-    // 4. Feedback: user teaches the recommender
     public async Task RegisterInteractionAsync(int userId, int newsId, bool liked, bool interested)
     {
         var news = await _context.News.FindAsync(newsId);
         if (news == null) return;
 
-        // Update news statistics
         if (liked) news.Likes++;
         else news.Dislikes++;
 
-        // Record in UserNews
-        var userNews = new UserNews
-        {
-            IdUser = userId,
-            IdNews = newsId,
-            Seen = true,
-            Interest = interested,
-            DateSeen = DateTime.UtcNow
-        };
-        _context.UserNews.Add(userNews);
+        var userNews = await _context.UserNews
+            .FirstOrDefaultAsync(un => un.IdUser == userId && un.IdNews == newsId);
 
-        // Adjust dynamic weight for the user's preference tag
+        if (userNews == null)
+        {
+            userNews = new UserNews
+            {
+                IdUser = userId,
+                IdNews = newsId,
+                Seen = true,
+                Interest = interested,
+                DateSeen = DateTime.UtcNow
+            };
+            _context.UserNews.Add(userNews);
+        }
+        else
+        {
+            userNews.Seen = true;
+            userNews.Interest = userNews.Interest || interested;
+            userNews.DateSeen = DateTime.UtcNow;
+        }
+
         var userPref = await _context.UserPreferences
             .Include(up => up.Preference)
-            .FirstOrDefaultAsync(up => up.IdUser == userId && up.Preference.IdTag == news.IdTag);
+            .FirstOrDefaultAsync(up => up.IdUser == userId && up.Preference != null && up.Preference.IdTag == news.IdTag);
 
-        if (userPref != null)
+        if (userPref?.Preference != null)
         {
-            // Train weight: +1 if liked, -1 if disliked
             userPref.Preference.Weight += liked ? 1 : -1;
         }
 
         await _context.SaveChangesAsync();
     }
-    
+
+    public async Task RegisterCategoryClickAsync(int userId, int newsId)
+    {
+        var news = await _context.News.FindAsync(newsId);
+        if (news == null) return;
+
+        var userNews = await _context.UserNews
+            .FirstOrDefaultAsync(un => un.IdUser == userId && un.IdNews == newsId);
+
+        if (userNews == null)
+        {
+            _context.UserNews.Add(new UserNews
+            {
+                IdUser = userId,
+                IdNews = newsId,
+                Seen = true,
+                Interest = true,
+                DateSeen = DateTime.UtcNow
+            });
+        }
+        else
+        {
+            userNews.Seen = true;
+            userNews.Interest = true;
+            userNews.DateSeen = DateTime.UtcNow;
+        }
+
+        var userPref = await _context.UserPreferences
+            .Include(up => up.Preference)
+            .FirstOrDefaultAsync(up => up.IdUser == userId && up.Preference != null && up.Preference.IdTag == news.IdTag);
+
+        if (userPref?.Preference != null)
+        {
+            userPref.Preference.Weight += 1;
+        }
+
+        await _context.SaveChangesAsync();
+    }
+
+    public async Task AddCommentAsync(int userId, int newsId, string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return;
+        text = text.Trim();
+        if (text.Length > 500) text = text[..500];
+
+        var news = await _context.News.FindAsync(newsId);
+        if (news == null) return;
+
+        _context.NewsComments.Add(new NewsComment
+        {
+            IdUser = userId,
+            IdNews = newsId,
+            CommentText = text,
+            CreatedAt = DateTime.UtcNow
+        });
+
+        var userNews = await _context.UserNews
+            .FirstOrDefaultAsync(un => un.IdUser == userId && un.IdNews == newsId);
+
+        if (userNews == null)
+        {
+            _context.UserNews.Add(new UserNews
+            {
+                IdUser = userId,
+                IdNews = newsId,
+                Seen = true,
+                Interest = true,
+                DateSeen = DateTime.UtcNow
+            });
+        }
+        else
+        {
+            userNews.Interest = true;
+            userNews.Seen = true;
+        }
+
+        var userPref = await _context.UserPreferences
+            .Include(up => up.Preference)
+            .FirstOrDefaultAsync(up => up.IdUser == userId && up.Preference != null && up.Preference.IdTag == news.IdTag);
+
+        if (userPref?.Preference != null)
+        {
+            userPref.Preference.Weight += 1;
+        }
+
+        await _context.SaveChangesAsync();
+    }
+
+    public async Task<List<NewsComment>> GetCommentsForNewsAsync(int newsId)
+    {
+        return await _context.NewsComments
+            .Include(c => c.User)
+            .Where(c => c.IdNews == newsId)
+            .OrderByDescending(c => c.CreatedAt)
+            .ToListAsync();
+    }
+
+    public async Task MarkNewsInterestAsync(int userId, int newsId)
+    {
+        var userNews = await _context.UserNews
+            .FirstOrDefaultAsync(un => un.IdUser == userId && un.IdNews == newsId);
+
+        if (userNews == null)
+        {
+            _context.UserNews.Add(new UserNews
+            {
+                IdUser = userId,
+                IdNews = newsId,
+                Seen = true,
+                Interest = true,
+                DateSeen = DateTime.UtcNow
+            });
+        }
+        else
+        {
+            userNews.Interest = true;
+            userNews.Seen = true;
+        }
+
+        await _context.SaveChangesAsync();
+    }
+
     /// <summary>
-    /// Retrieves a list of tag names representing a user's preferences, ordered by weight.
+    /// Busca noticias vía LM Studio para una categoría de Home, resume, categoriza y persiste en BD.
     /// </summary>
+    public async Task<News?> ExecuteAiSearchForCategoryAsync(string categoryName)
+    {
+        var llm = _llmService;
+        var ingest = _newsIngest;
+        if (llm == null || ingest == null)
+        {
+            _logger?.LogWarning("ExecuteAiSearchForCategoryAsync: LLM or ingest unavailable for {Category}", categoryName);
+            return null;
+        }
+
+        var mappings = InternetSearchService.GetCategoryMapping();
+        var match = mappings.FirstOrDefault(m =>
+            m.Category.Equals(categoryName, StringComparison.OrdinalIgnoreCase));
+        if (string.IsNullOrEmpty(match.Category))
+        {
+            return null;
+        }
+
+        var tag = await _context.Tags
+            .FirstOrDefaultAsync(t => t.Name.ToLower() == categoryName.ToLower());
+        if (tag == null)
+        {
+            tag = new Tag { Name = match.Category };
+            _context.Tags.Add(tag);
+            await _context.SaveChangesAsync();
+        }
+
+        List<(string Title, string Url, string Snippet)> results;
+        try
+        {
+            results = await llm.SearchWebAsync(match.SearchQuery, 5);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex, "Category search failed for {Category}", categoryName);
+            return null;
+        }
+
+        if (results.Count == 0) return null;
+
+        var picked = results[Random.Shared.Next(results.Count)];
+        if (string.IsNullOrWhiteSpace(picked.Url)) return null;
+
+        var bodyText = string.IsNullOrWhiteSpace(picked.Snippet) ? picked.Title : picked.Snippet;
+        string aiSummary;
+        try
+        {
+            aiSummary = await SummarizeTextAsync(bodyText, 220);
+        }
+        catch
+        {
+            aiSummary = bodyText.Length <= 220 ? bodyText : bodyText[..220] + "...";
+        }
+
+        News news;
+        try
+        {
+            news = await ingest.SaveOrUpdateNewsAsync(
+                picked.Url,
+                bodyText,
+                picked.Title,
+                tag.IdTag,
+                isSfw: true,
+                secureLink: true,
+                isAi: true,
+                newsDate: DateTime.UtcNow);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex, "Failed to ingest category news for {Category}", categoryName);
+            return null;
+        }
+
+        if (news.DetailNews != null)
+        {
+            news.DetailNews.AiSummary = aiSummary;
+            await _context.SaveChangesAsync();
+        }
+
+        return await _context.News
+            .Include(n => n.Tag)
+            .Include(n => n.DetailNews)
+            .FirstOrDefaultAsync(n => n.IdNews == news.IdNews);
+    }
+
+    /// <summary>
+    /// Al menos una noticia por preferencia/tag del usuario; dispara búsqueda IA si falta contenido.
+    /// </summary>
+    public async Task<List<News>> GetPersonalizedNewsOnePerPreferenceAsync(int userId)
+    {
+        var userPreferencesList = await _context.UserPreferences
+            .Include(up => up.Preference)
+                .ThenInclude(p => p!.Tag)
+            .Where(up => up.IdUser == userId)
+            .ToListAsync();
+
+        var preferences = userPreferencesList
+            .Select(up => up.Preference)
+            .Where(p => p != null)
+            .ToList();
+
+        if (preferences.Count == 0)
+        {
+            return new List<News>();
+        }
+
+        var tagIds = preferences!
+            .Select(p => p!.IdTag)
+            .Distinct()
+            .ToList();
+
+        var seenIds = await _context.UserNews
+            .Where(un => un.IdUser == userId && un.Seen)
+            .Select(un => un.IdNews)
+            .ToListAsync();
+
+        var fechaLimite = DateTime.UtcNow.AddDays(-30);
+        var result = new List<News>();
+
+        foreach (var tagId in tagIds)
+        {
+            var item = await _context.News
+                .Include(n => n.Tag)
+                .Include(n => n.DetailNews)
+                .Where(n => n.IdTag == tagId && n.CapturedDate >= fechaLimite)
+                .OrderByDescending(n => n.CapturedDate)
+                .FirstOrDefaultAsync();
+
+            if (item != null && !seenIds.Contains(item.IdNews))
+            {
+                result.Add(item);
+            }
+        }
+
+        if (result.Count < tagIds.Count && _llmService != null && _newsIngest != null)
+        {
+            try
+            {
+                await ExecuteNewsSearchWorkflowAsync(userId, numSearches: Math.Max(tagIds.Count, 4));
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(ex, "AI workflow failed while filling personalized feed");
+            }
+
+            result.Clear();
+            foreach (var tagId in tagIds)
+            {
+                var item = await _context.News
+                    .Include(n => n.Tag)
+                    .Include(n => n.DetailNews)
+                    .Where(n => n.IdTag == tagId && n.CapturedDate >= fechaLimite)
+                    .OrderByDescending(n => n.CapturedDate)
+                    .FirstOrDefaultAsync();
+
+                if (item != null)
+                {
+                    result.Add(item);
+                }
+            }
+        }
+
+        var llm = _llmService;
+        if (llm != null)
+        {
+            foreach (var news in result)
+            {
+                if (news.DetailNews != null && string.IsNullOrWhiteSpace(news.DetailNews.AiSummary))
+                {
+                    var summary = await SummarizeTextAsync(news.DetailNews.Context ?? string.Empty, 220);
+                    if (!string.IsNullOrWhiteSpace(summary))
+                    {
+                        news.DetailNews.AiSummary = summary;
+                    }
+                }
+            }
+            await _context.SaveChangesAsync();
+        }
+
+        return result;
+    }
+    
     public async Task<List<string>> GetUserPreferencesAsync(int userId)
     {
-        var userPreferences = await _context.UserPreferences
+        var userPreferencesList = await _context.UserPreferences
             .Include(up => up.Preference)
-                // Assuming Tag is a navigation property on your Preference entity
-                .ThenInclude(p => p.Tag)
+                .ThenInclude(p => p != null ? p.Tag : null)
             .Where(up => up.IdUser == userId)
-            .Select(up => up.Preference)
             .ToListAsync();
+            
+        var userPreferences = userPreferencesList.Select(up => up.Preference!).Where(p => p != null).ToList();
 
         return userPreferences
             .OrderByDescending(p => p.Weight)
@@ -546,5 +820,29 @@ public class RecommendationEngine
             .Distinct()
             .ToList();
     }
-}
 
+    public async Task RegisterReadingTimeAsync(int userId, int newsId, double timeSpentSeconds)
+    {
+        var userNews = await _context.UserNews
+            .FirstOrDefaultAsync(un => un.IdUser == userId && un.IdNews == newsId);
+
+        if (userNews == null)
+        {
+            userNews = new UserNews
+            {
+                IdUser = userId,
+                IdNews = newsId,
+                Seen = true,
+                Interest = timeSpentSeconds >= 120,
+                DateSeen = DateTime.UtcNow
+            };
+            _context.UserNews.Add(userNews);
+        }
+        else if (timeSpentSeconds >= 120)
+        {
+            userNews.Interest = true;
+        }
+
+        await _context.SaveChangesAsync();
+    }
+}

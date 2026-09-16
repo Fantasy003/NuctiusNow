@@ -1,7 +1,7 @@
-﻿@page "/just-for-you"
-@rendermode InteractiveServer
+@page "/just-for-you"
+
 @using NuctiusNow.Services
-@using NuctiusNow.Client
+@using NuctiusNow.Components.User_Related
 @inject UserSessionService sessionService
 @inject RecommendationEngine recommendationEngine
 @inject NavigationManager Navigation
@@ -13,31 +13,43 @@
     <div class="jfy-wrapper">
 
         <div class="jfy-grid">
-            @for (int i = 0; i < Math.Min(4, PersonalizedNews.Count); i++)
+            @if (errorMessage != null)
             {
-                var news = PersonalizedNews[i];
-
-                <div class="news-box-link">
-                    <div class="news-box">
-                        <div class="card-media" style="background-image: url('@news.ImageUrl');">
-                            <span class="category-tag">@news.Category</span>
-
-                            <div class="action-column">
-                                <button class="action-btn" title="Like">❤</button>
-                                <button class="action-btn" title="Comment">💬</button>
-                                <button class="action-btn" title="Share">⤴</button>
-                            </div>
-                        </div>
-
-                        <div class="card-body">
-                            <h2 class="news-title">@news.Title</h2>
-                            <p class="news-body">@news.Content</p>
-                        </div>
-                    </div>
+                <div style="text-align:center; padding:2rem; color:#d9534f;">
+                    <p>@errorMessage</p>
+                    <button class="btn-refresh" @onclick="LoadRecommendationsAsync">Retry</button>
                 </div>
             }
+            else if (PersonalizedNews == null)
+            {
+                <div style="display:flex; justify-content:center; align-items:center; padding:4rem;">
+                    <div class="loading-spinner"></div>
+                </div>
+            }
+            else if (PersonalizedNews.Count == 0)
+            {
+                <div style="text-align:center; padding:2rem; color:var(--text-muted);">
+                    <p>No personalized news available. Press the refresh button to search with AI.</p>
+                </div>
+            }
+            else
+            {
+                @for (int i = 0; i < PersonalizedNews.Count; i++)
+                {
+                    var news = PersonalizedNews[i];
+                    var summary = news.DetailNews?.AiSummary
+                        ?? recommendationEngine.Summarize(news.DetailNews, 220);
 
-            <!-- Mobile bottom navigation -->
+                    <a href="@($"/news-detail/{news.IdNews}")" class="news-box-link jfy-text-card">
+                        <div class="news-box jfy-text-only">
+                            <span class="category-tag-inline">@(news.Tag?.Name ?? "General")</span>
+                            <h2 class="news-title">@(news.DetailNews?.Keyword ?? "No Title")</h2>
+                            <p class="news-body">@summary</p>
+                        </div>
+                    </a>
+                }
+            }
+
             <nav class="bottom-nav" role="navigation" aria-label="Bottom navigation">
                 <a href="/" class="bottom-nav-item">
                     <svg viewBox="0 0 24 24" class="bnav-icon" aria-hidden="true"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z" /></svg>
@@ -57,177 +69,100 @@
                 </a>
             </nav>
         </div>
+        
+        <div class="center-refresh-zone">
+            <button class="btn-refresh" @onclick="AiSearchNow" disabled="@isSearching">
+                <span class="refresh-icon-circle">
+                    <svg class="sync-icon" viewBox="0 0 24 24"><path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/></svg>
+                </span>
+            </button>
+        </div>
     </div>
 </div>
 
-@if (showDiagnostics)
-{
-    <div class="diagnostic-panel">
-        <h3>Diagnostics</h3>
-        <div class="diagnostic-entries">
-            @if (diagnostics.Count == 0)
-            {
-                <div>No diagnostic messages yet.</div>
-            }
-            else
-            {
-                <ul>
-                    @foreach (var d in diagnostics)
-                    {
-                        <li>@d</li>
-                    }
-                </ul>
-            }
-        </div>
-    </div>
-}
-
 @code {
-    private bool isUserLoggedIn = true;
-    private bool isPremium = true;
-    private List<NewsItem> PersonalizedNews = new();
-    private List<string> diagnostics = new();
-    private bool showDiagnostics = false;
+    private List<News>? PersonalizedNews;
+    private bool isSearching;
+    private string? errorMessage;
 
-    protected override async Task OnAfterRenderAsync(bool firstRender)
+    protected override async Task OnInitializedAsync()
     {
-        if (!firstRender) return;
+        await InitializePageAsync();
+    }
 
+    private async Task InitializePageAsync()
+    {
         try
         {
-            diagnostics.Add($"OnAfterRenderAsync: initializing session at {DateTime.UtcNow}");
             await sessionService.InitializeAsync();
-            diagnostics.Add($"Session initialized. IsAuthenticated={sessionService.IsAuthenticated}");
+
+            if (!sessionService.IsAuthenticated)
+            {
+                Navigation.NavigateTo("/login", true);
+                return;
+            }
+
+            await LoadRecommendationsAsync();
         }
         catch (Exception ex)
         {
-            diagnostics.Add($"Exception during session initialize: {ex.Message}");
+            Console.Error.WriteLine($"Error initializing Just For You page: {ex}");
+            errorMessage = "Could not load personalized news.";
         }
-
-        if (!sessionService.IsAuthenticated)
-        {
-            diagnostics.Add("User not authenticated - navigating to login");
-            Navigation.NavigateTo("/login", true);
-            return;
-        }
-
-        await LoadRecommendationsAsync();
-    }
-
-    private void RefreshFeed()
-    {
-        var random = new Random();
-        PersonalizedNews = PersonalizedNews.OrderBy(_ => random.Next()).ToList();
-        StateHasChanged();
     }
 
     private async Task LoadRecommendationsAsync()
     {
-        PersonalizedNews = new List<NewsItem>();
-        diagnostics.Add($"LoadRecommendationsAsync: start at {DateTime.UtcNow}");
+        errorMessage = null;
 
         if (sessionService.UserId == null)
         {
-            diagnostics.Add("User ID is null - no recommendations loaded.");
-            StateHasChanged();
+            PersonalizedNews = new List<News>();
             return;
         }
 
         try
         {
-            // 1. Fetch preferences from SQL using the assumed method signature
-            List<string> allPreferences = await recommendationEngine.GetUserPreferencesAsync(sessionService.UserId.Value);
+            var userId = sessionService.UserId.Value;
+            var recommendations = await recommendationEngine.GetPersonalizedNewsOnePerPreferenceAsync(userId);
+            PersonalizedNews = recommendations?.ToList() ?? new List<News>();
 
-            if (allPreferences == null || !allPreferences.Any())
-            {
-                diagnostics.Add("No user preferences found in the database.");
-                PersonalizedNews = new List<NewsItem>();
-                StateHasChanged();
-                return;
-            }
-
-            // 2. Select exactly 4 random preferences (or fewer if less than 4 are available)
-            var random = new Random();
-            var selectedPrefs = allPreferences.OrderBy(x => random.Next()).Take(4).ToList();
-
-            var items = new List<NewsItem>();
-            int idCounter = 1;
-
-            // 3. Loop through preferences, prompt the AI, and create the news item
-            foreach (var pref in selectedPrefs)
-            {
-                diagnostics.Add($"Prompting AI for preference: {pref}");
-
-                // Build the specific prompt for the AI
-                string prompt = $"Write a brief, current news summary about: {pref}";
-
-                // Call your LLM to get the summary based on the prompt
-                var aiSummary = await recommendationEngine.SummarizeAsync(prompt);
-
-                items.Add(new NewsItem
-                {
-                    Id = idCounter++,
-                    Category = pref, // Use the preference as the category tag
-                    Title = $"Latest Updates: {pref}",
-                    Content = !string.IsNullOrWhiteSpace(aiSummary) ? aiSummary : "Summary unavailable.",
-                    ImageUrl = $"https://picsum.photos/seed/{pref.Replace(" ", "")}/150/150" // Consistent random image per topic
-                });
-            }
-
-            PersonalizedNews = items;
+            Console.WriteLine($"Personalized news loaded: {PersonalizedNews.Count}");
         }
         catch (Exception ex)
         {
-            diagnostics.Add($"LoadRecommendationsAsync exception: {ex.Message}");
-            // ensure UI shows something and keep app running
-            PersonalizedNews = new List<NewsItem>();
+            Console.Error.WriteLine($"Error loading personalized news: {ex}");
+            PersonalizedNews = null;
+            errorMessage = "An error occurred while loading news. Check the logs.";
         }
-
-        diagnostics.Add($"Finished at {DateTime.UtcNow} - items={PersonalizedNews.Count}");
-        StateHasChanged();
-    }
-
-    private void ToggleDiagnostics()
-    {
-        showDiagnostics = !showDiagnostics;
     }
 
     private async Task AiSearchNow()
     {
-        diagnostics.Add($"AI Search started at {DateTime.UtcNow}");
-        if (sessionService.UserId == null)
-        {
-            diagnostics.Add("AI Search: user not authenticated");
-            return;
-        }
+        if (isSearching || sessionService.UserId == null) return;
+
+        isSearching = true;
+        errorMessage = null;
 
         try
         {
-            var ingested = await recommendationEngine.ExecuteNewsSearchWorkflowAsync(sessionService.UserId.Value, numSearches: 4);
-            diagnostics.Add($"AI Search: complete - ingested {ingested.Count} URLs");
-            foreach (var u in ingested) diagnostics.Add($"✓ Ingested: {u}");
+            var userId = sessionService.UserId.Value;
+            Console.WriteLine($"Starting AI news search for user {userId}");
+
+            await recommendationEngine.ExecuteNewsSearchWorkflowAsync(userId, numSearches: 6);
+            Console.WriteLine("AI news search workflow completed.");
+
+            await LoadRecommendationsAsync();
         }
         catch (Exception ex)
         {
-            diagnostics.Add($"AI Search error: {ex.Message}");
+            Console.Error.WriteLine($"Error executing AI news search: {ex}");
+            errorMessage = "The AI encountered an error while searching or saving news.";
         }
-
-        await LoadRecommendationsAsync();
+        finally
+        {
+            isSearching = false;
+            await InvokeAsync(StateHasChanged);
+        }
     }
-
-    public string GetRandomString(int min, int max)
-    {
-        var random = new Random();
-        return random.Next(min, max + 1).ToString("D3");
-    }
-
-    public class NewsItem
-    {
-        public int Id { get; set; }
-        public string Category { get; set; } = "";
-        public string Title { get; set; } = "";
-        public string Content { get; set; } = "";
-        public string ImageUrl { get; set; } = "";
-    }
-}
 }

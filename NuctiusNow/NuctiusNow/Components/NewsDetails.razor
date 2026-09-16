@@ -1,124 +1,341 @@
-﻿@page "/noticia-detalle/{Id:int}"
 @page "/news-detail/{Id:int}"
-@rendermode InteractiveServer
+@implements IAsyncDisposable
+
+@using System.Diagnostics
+@using System.Text.RegularExpressions
+@using Microsoft.EntityFrameworkCore
+@using NuctiusNow.Data
+@using NuctiusNow.Services
+@using NuctiusNow.Components.User_Related
 @inject UserSessionService sessionService
 @inject NavigationManager Navigation
+@inject ApplicationDbContext DbContext
+@inject RecommendationEngine recommendationEngine
+@inject IJSRuntime JS
 
-<PageTitle>News Detail - NuctiusNow</PageTitle>
+<PageTitle>News Details - NuctiusNow</PageTitle>
 
-<div class="detail-page-container">
-
-    <div class="back-nav">
-        <NavLink href="just-for-you" class="btn-back">⬅ Back to Just For You</NavLink>
+@if (isLoading)
+{
+    <div class="news-detail-page" style="display:flex; justify-content:center; align-items:center; padding-top: 4rem;">
+        <div class="loading-spinner"></div>
     </div>
-
-    <article class="detail-card">
-        <div class="meta-info">
-            <span class="category">@Category</span>
-            <span class="news-id">News #: #@Id</span>
-        </div>
-
-        <h1 class="detail-title">@Title</h1>
-
-        <div class="detail-content-layout">
-            <img src="@ImageUrl" class="detail-img" alt="News Image Full" />
-
-            <div class="detail-text">
-                <h3>Main Summary</h3>
-                <p class="body-featured">@Content</p>
-
-                <h3>Full Article Body</h3>
-                <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.</p>
-                <p>Adding contextual information and simulated content for the full article body displayed in premium portals.</p>
-            </div>
-        </div>
-
-        <div class="article-actions-bar">
-            <div class="reactions-group">
-                <button class="btn-action btn-like @(hasLiked ? "active-like" : "")" @onclick="HandleLike">
-                    <span class="action-icon">👍</span>
-                    <span class="action-count">@likeCount</span>
-                </button>
-
-                <button class="btn-action btn-dislike @(hasDisliked ? "active-dislike" : "")" @onclick="HandleDislike">
-                    <span class="action-icon">👎</span>
-                </button>
-            </div>
-
-            <button class="btn-action btn-share" @onclick="HandleShare">
-                <span class="action-icon">📨</span> Share
+}
+else if (currentNews == null)
+{
+    <div class="news-detail-page" style="display:flex; justify-content:center; align-items:center; padding-top: 4rem;">
+        <div class="error-message">Requested news not found.</div>
+    </div>
+}
+else
+{
+    <div class="news-detail-page">
+        <div class="back-nav">
+            <button class="btn-back" @onclick="GoBack">
+                <svg viewBox="0 0 24 24" style="width:20px;height:20px;fill:currentColor;"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
+                Back
             </button>
         </div>
-    </article>
 
-</div>
+        <article class="detail-card">
+            <div class="meta-info">
+                <span class="category">@(currentNews.Tag?.Name ?? "General")</span>
+                <span class="news-id">@currentNews.CapturedDate.ToString("MMM d, yyyy - HH:mm")</span>
+            </div>
+
+            <h1 class="detail-title">@(currentNews.DetailNews?.Keyword ?? "No Title Available")</h1>
+
+            <div class="detail-content-layout">
+                @if (!string.IsNullOrWhiteSpace(heroImageUrl))
+                {
+                    <img src="@heroImageUrl" class="detail-img" alt="Article image" />
+                }
+
+                <div class="detail-text">
+                    <p>@(currentNews.DetailNews?.Context ?? "No content available.")</p>
+                </div>
+            </div>
+
+            <div class="article-actions-bar">
+                <div class="reactions-group">
+                    <button class="btn-action btn-like @(hasLiked ? "active-like" : "")" @onclick="() => HandleInteraction(true)">
+                        <span class="action-icon">👍</span>
+                        <span class="action-count">@currentNews.Likes</span>
+                    </button>
+                    <button class="btn-action btn-dislike @(hasDisliked ? "active-dislike" : "")" @onclick="() => HandleInteraction(false)">
+                        <span class="action-icon">👎</span>
+                        <span class="action-count">@currentNews.Dislikes</span>
+                    </button>
+                </div>
+                
+                <button class="btn-action btn-share" @onclick="ShareArticle">
+                    <span class="action-icon">⤴</span> Share
+                </button>
+            </div>
+
+            <section class="comments-section">
+                <h3 class="comments-heading">Comments</h3>
+
+                @if (!sessionService.IsAuthenticated)
+                {
+                    <p class="comments-login-hint">
+                        <a href="/login">Sign in</a> to leave a comment.
+                    </p>
+                }
+                else
+                {
+                    <div class="comment-form">
+                        <textarea class="comment-input" maxlength="500" rows="3" placeholder="Write a comment..." @bind="newCommentText"></textarea>
+                        <button class="btn-submit-comment" disabled="@isSubmittingComment" @onclick="SubmitComment">Post comment</button>
+                    </div>
+                }
+
+                @if (commentError != null)
+                {
+                    <p class="comment-error">@commentError</p>
+                }
+
+                <ul class="comments-list">
+                    @foreach (var c in comments)
+                    {
+                        <li class="comment-item">
+                            <span class="comment-author">@(c.User?.Username ?? "User")</span>
+                            <span class="comment-date">@c.CreatedAt.ToString("MMM d, yyyy HH:mm")</span>
+                            <p class="comment-body">@c.CommentText</p>
+                        </li>
+                    }
+                </ul>
+            </section>
+        </article>
+
+        <nav class="bottom-nav" role="navigation" aria-label="Bottom navigation">
+            <a href="/" class="bottom-nav-item">
+                <svg viewBox="0 0 24 24" class="bnav-icon" aria-hidden="true"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z" /></svg>
+                <span>Home</span>
+            </a>
+            <a href="/just-for-you" class="bottom-nav-item">
+                <svg viewBox="0 0 24 24" class="bnav-icon" aria-hidden="true"><path d="M12 21.593c-5.63-5.539-11-10.297-11-14.402 0-3.791 3.068-5.191 5.281-5.191 1.312 0 4.151.501 5.719 4.457 1.59-3.968 4.464-4.447 5.726-4.447 2.54 0 5.274 1.621 5.274 5.181 0 4.069-5.136 8.625-11 14.402z" /></svg>
+                <span>For You</span>
+            </a>
+            <a href="/search" class="bottom-nav-item">
+                <svg viewBox="0 0 24 24" class="bnav-icon" aria-hidden="true"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C8.01 14 6 11.99 6 9.5S8.01 5 10.5 5 15 7.01 15 9.5 12.99 14 10.5 14z" /></svg>
+                <span>Search</span>
+            </a>
+            <a href="/user-settings" class="bottom-nav-item">
+                <svg viewBox="0 0 24 24" class="bnav-icon" aria-hidden="true"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" /></svg>
+                <span>Settings</span>
+            </a>
+        </nav>
+    </div>
+}
 
 @code {
     [Parameter] public int Id { get; set; }
 
-    private string Category { get; set; } = "Loading...";
-    private string Title { get; set; } = "Loading...";
-    private string Content { get; set; } = "";
-    private string ImageUrl { get; set; } = "https://picsum.photos/400/300";
+    private News? currentNews;
+    private bool isLoading = true;
+    private bool hasLiked;
+    private bool hasDisliked;
+    private readonly Stopwatch readingTimer = new();
+    private Timer? readingInterestTimer;
+    private DotNetObjectReference<NewsDetails>? dotNetRef;
+    private string? heroImageUrl;
+    private List<NewsComment> comments = new();
+    private string newCommentText = string.Empty;
+    private bool isSubmittingComment;
+    private string? commentError;
+    private bool scrollInterestRegistered;
+    private bool timerInterestRegistered;
 
-    // Interaction state
-    private int likeCount = 42;
-    private bool hasLiked = false;
-    private bool hasDisliked = false;
+    protected override async Task OnInitializedAsync()
+    {
+        await sessionService.InitializeAsync();
+        
+        isLoading = true;
+        currentNews = await DbContext.News
+            .Include(n => n.Tag)
+            .Include(n => n.DetailNews)
+            .FirstOrDefaultAsync(n => n.IdNews == Id);
+
+        if (currentNews != null)
+        {
+            heroImageUrl = ExtractImageUrl(currentNews.DetailNews?.Context);
+            comments = await recommendationEngine.GetCommentsForNewsAsync(Id);
+        }
+
+        isLoading = false;
+    }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!firstRender) return;
+        if (!firstRender || currentNews == null) return;
 
-        await sessionService.InitializeAsync();
-        if (!sessionService.IsAuthenticated)
+        readingTimer.Start();
+
+        readingInterestTimer = new Timer(async _ =>
         {
-            Navigation.NavigateTo("/login", true);
-            return;
+            if (timerInterestRegistered) return;
+            timerInterestRegistered = true;
+
+            await InvokeAsync(async () =>
+            {
+                if (sessionService.UserId.HasValue)
+                {
+                    await recommendationEngine.RegisterReadingTimeAsync(
+                        sessionService.UserId.Value,
+                        Id,
+                        timeSpentSeconds: 120);
+                    await recommendationEngine.MarkNewsInterestAsync(sessionService.UserId.Value, Id);
+                }
+            });
+        }, null, TimeSpan.FromMinutes(2), Timeout.InfiniteTimeSpan);
+
+        dotNetRef = DotNetObjectReference.Create(this);
+        try
+        {
+            await JS.InvokeVoidAsync("newsDetailScroll.registerScrollEnd", dotNetRef);
         }
-
-        if (Id == 1) { Category = "Technology"; Title = "NVIDIA: SPARK PROCESSOR"; ImageUrl = "https://picsum.photos/id/0/400/300"; }
-        else if (Id == 2) { Category = "Sports"; Title = "WORLD CUP: URUGUAY ELIMINATED"; ImageUrl = "https://picsum.photos/id/73/400/300"; }
-        else if (Id == 3) { Category = "Weather"; Title = "ARGENTINA: RAINING ON MONDAY"; ImageUrl = "https://picsum.photos/id/401/400/300"; }
-        else { Category = "Technology"; Title = "AMD: THEIR LAST INNOVATION"; ImageUrl = "https://picsum.photos/id/160/400/300"; }
-
-        Content = "[This is a placeholder summary generated for debugging purposes.]";
+        catch
+        {
+            // JS no disponible en prerender
+        }
     }
 
-    private void HandleLike()
+    [JSInvokable]
+    public async Task OnScrollReachedEnd()
     {
-        if (hasLiked)
+        if (scrollInterestRegistered) return;
+        scrollInterestRegistered = true;
+
+        if (sessionService.UserId.HasValue)
         {
-            likeCount--;
-            hasLiked = false;
+            await recommendationEngine.MarkNewsInterestAsync(sessionService.UserId.Value, Id);
         }
-        else
+    }
+
+    private static string? ExtractImageUrl(string? context)
+    {
+        if (string.IsNullOrWhiteSpace(context)) return null;
+
+        var match = Regex.Match(context, @"https?://[^\s""']+\.(?:jpg|jpeg|png|gif|webp)", RegexOptions.IgnoreCase);
+        return match.Success ? match.Value : null;
+    }
+
+    private async Task GoBack()
+    {
+        await JS.InvokeVoidAsync("history.back");
+    }
+    
+    private void ShareArticle()
+    {
+    }
+
+    private async Task HandleInteraction(bool isLike)
+    {
+        if (currentNews == null) return;
+
+        if (isLike)
         {
-            likeCount++;
+            if (hasLiked)
+            {
+                hasLiked = false;
+                StateHasChanged();
+                return;
+            }
             hasLiked = true;
-            if (hasDisliked) hasDisliked = false; // clear dislike if it was active
-        }
-    }
-
-    private void HandleDislike()
-    {
-        if (hasDisliked)
-        {
             hasDisliked = false;
         }
         else
         {
-            hasDisliked = true;
-            if (hasLiked)
+            if (hasDisliked)
             {
-                likeCount--;
-                hasLiked = false; // clear like if it was active
+                hasDisliked = false;
+                StateHasChanged();
+                return;
             }
+            hasDisliked = true;
+            hasLiked = false;
+        }
+
+        if (sessionService.UserId.HasValue)
+        {
+            await recommendationEngine.RegisterInteractionAsync(
+                userId: sessionService.UserId.Value,
+                newsId: Id,
+                liked: isLike,
+                interested: isLike);
+
+            currentNews = await DbContext.News
+                .Include(n => n.Tag)
+                .Include(n => n.DetailNews)
+                .FirstOrDefaultAsync(n => n.IdNews == Id);
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task SubmitComment()
+    {
+        commentError = null;
+
+        if (!sessionService.IsAuthenticated || !sessionService.UserId.HasValue)
+        {
+            commentError = "You must be signed in to comment.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(newCommentText))
+        {
+            commentError = "Comment cannot be empty.";
+            return;
+        }
+
+        isSubmittingComment = true;
+        try
+        {
+            await recommendationEngine.AddCommentAsync(sessionService.UserId.Value, Id, newCommentText);
+            newCommentText = string.Empty;
+            comments = await recommendationEngine.GetCommentsForNewsAsync(Id);
+        }
+        catch
+        {
+            commentError = "Could not save your comment. Please try again.";
+        }
+        finally
+        {
+            isSubmittingComment = false;
         }
     }
 
-    private void HandleShare()
+    public async ValueTask DisposeAsync()
     {
-        Console.WriteLine($"News link #{Id} copied to clipboard.");
+        readingInterestTimer?.Dispose();
+
+        try
+        {
+            await JS.InvokeVoidAsync("newsDetailScroll.dispose");
+        }
+        catch { }
+
+        dotNetRef?.Dispose();
+
+        if (readingTimer.IsRunning)
+        {
+            readingTimer.Stop();
+            var timeSpentSeconds = readingTimer.Elapsed.TotalSeconds;
+
+            if (sessionService.UserId.HasValue && timeSpentSeconds > 3 && currentNews != null)
+            {
+                await recommendationEngine.RegisterReadingTimeAsync(
+                    userId: sessionService.UserId.Value,
+                    newsId: Id,
+                    timeSpentSeconds: timeSpentSeconds);
+
+                if (timeSpentSeconds >= 120)
+                {
+                    await recommendationEngine.MarkNewsInterestAsync(sessionService.UserId.Value, Id);
+                }
+            }
+        }
     }
 }
