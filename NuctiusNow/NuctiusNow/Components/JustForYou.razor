@@ -1,168 +1,206 @@
 @page "/just-for-you"
 
+@using System.Collections.Concurrent
+@using Microsoft.EntityFrameworkCore
+@using NuctiusNow.Data
 @using NuctiusNow.Services
 @using NuctiusNow.Components.User_Related
+
 @inject UserSessionService sessionService
-@inject RecommendationEngine recommendationEngine
+@inject RecommendationEngine RecommendationEngine
+@inject CategoryNewsService CategoryNewsService
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
 @inject NavigationManager Navigation
 
-<PageTitle>Just For You - NuctiusNow</PageTitle>
+<PageTitle>NuctiusNow - Just For You</PageTitle>
 
 <div class="jfy-page-container">
-
     <div class="jfy-wrapper">
-
-        <div class="jfy-grid">
-            @if (errorMessage != null)
-            {
-                <div style="text-align:center; padding:2rem; color:#d9534f;">
-                    <p>@errorMessage</p>
-                    <button class="btn-refresh" @onclick="LoadRecommendationsAsync">Retry</button>
-                </div>
-            }
-            else if (PersonalizedNews == null)
-            {
-                <div style="display:flex; justify-content:center; align-items:center; padding:4rem;">
-                    <div class="loading-spinner"></div>
-                </div>
-            }
-            else if (PersonalizedNews.Count == 0)
-            {
-                <div style="text-align:center; padding:2rem; color:var(--text-muted);">
-                    <p>No personalized news available. Press the refresh button to search with AI.</p>
-                </div>
-            }
-            else
-            {
-                @for (int i = 0; i < PersonalizedNews.Count; i++)
+        @if (!_isInitialized)
+        {
+            <p>Loading your preferences...</p>
+        }
+        else if (!sessionService.IsAuthenticated)
+        {
+            <div class="auth-message" style="text-align: center; padding: 3rem 1rem;">
+                <h2>You need to be logged in</h2>
+                <p style="color: var(--text-muted); margin-bottom: 1.5rem;">Sign in to see a news feed tailored specifically to your interests.</p>
+                <button class="btn-primary" style="padding: 0.75rem 1.5rem; background: var(--accent); border: none; border-radius: var(--radius-pill); color: white; cursor: pointer;" @onclick='() => Navigation.NavigateTo("/login")'>Log In</button>
+            </div>
+        }
+        else if (Categories.Count == 0)
+        {
+            <div class="auth-message" style="text-align: center; padding: 3rem 1rem;">
+                <h2>No interests selected</h2>
+                <p style="color: var(--text-muted); margin-bottom: 1.5rem;">Update your profile preferences to start seeing personalized news here.</p>
+                <button class="btn-primary" style="padding: 0.75rem 1.5rem; background: var(--accent); border: none; border-radius: var(--radius-pill); color: white; cursor: pointer;" @onclick='() => Navigation.NavigateTo("/user-settings")'>Update Preferences</button>
+            </div>
+        }
+        else
+        {
+            <div class="jfy-grid">
+                @foreach (var cat in Categories)
                 {
-                    var news = PersonalizedNews[i];
-                    var summary = news.DetailNews?.AiSummary
-                        ?? recommendationEngine.Summarize(news.DetailNews, 220);
+                    var isLoading = _isLoading.GetValueOrDefault(cat.Name, false);
+                    var hottestNews = _hottestNewsByCategory.GetValueOrDefault(cat.Name);
 
-                    <a href="@($"/news-detail/{news.IdNews}")" class="news-box-link jfy-text-card">
-                        <div class="news-box jfy-text-only">
-                            <span class="category-tag-inline">@(news.Tag?.Name ?? "General")</span>
-                            <h2 class="news-title">@(news.DetailNews?.Keyword ?? "No Title")</h2>
-                            <p class="news-body">@summary</p>
-                        </div>
+                    <a class="news-box-link" role="button" tabindex="0"
+                       @onclick="async () => await OpenCategoryNews(cat.Name, hottestNews)"
+                       @onclick:preventDefault="true"
+                       @onkeydown="@(async e => { if (e.Key == "Enter") await OpenCategoryNews(cat.Name, hottestNews); })">
+
+                        <article class="news-box">
+                            <div class="card-media" style="background-image: url('@cat.BackupImageUrl');">
+                                <span class="category-tag">@cat.Name</span>
+                            </div>
+                            <div class="card-body">
+                                @if (isLoading)
+                                {
+                                    <h2 class="news-title">Loading...</h2>
+                                    <p class="news-body">Fetching the latest insights tailored to your preferences...</p>
+                                }
+                                else if (hottestNews != null)
+                                {
+                                    <h2 class="news-title">@(hottestNews.DetailNews?.Keyword ?? "No Title Available")</h2>
+                                    <p class="news-body">@(hottestNews.DetailNews?.Context ?? "No summary available.")</p>
+
+                                    <span style="font-size: 0.75rem; color: var(--text-muted); display: block; margin-top: 0.5rem;">
+                                        @hottestNews.CapturedDate.ToString("dd MMM yyyy")
+                                        @if (_sourceByCategory.TryGetValue(cat.Name, out var source) && source == NewsSelectionSource.DatabaseRandomFallback)
+                                        {
+                                            <span class="news-status" style="margin-left: 10px; font-size: 0.65rem; color: rgba(255,255,255,0.7); background-color: rgba(255,255,255,0.15); padding: 0.2rem 0.5rem; border-radius: 4px;">Showing an older article</span>
+                                        }
+                                    </span>
+                                }
+                                else
+                                {
+                                    <h2 class="news-title">No recent news</h2>
+                                    <p class="news-body">We couldn't find any recent articles for this category.</p>
+                                }
+                            </div>
+                        </article>
                     </a>
                 }
-            }
-
-            <nav class="bottom-nav" role="navigation" aria-label="Bottom navigation">
-                <a href="/" class="bottom-nav-item">
-                    <svg viewBox="0 0 24 24" class="bnav-icon" aria-hidden="true"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z" /></svg>
-                    <span>Home</span>
-                </a>
-                <a href="/just-for-you" class="bottom-nav-item active">
-                    <svg viewBox="0 0 24 24" class="bnav-icon" aria-hidden="true"><path d="M12 21.593c-5.63-5.539-11-10.297-11-14.402 0-3.791 3.068-5.191 5.281-5.191 1.312 0 4.151.501 5.719 4.457 1.59-3.968 4.464-4.447 5.726-4.447 2.54 0 5.274 1.621 5.274 5.181 0 4.069-5.136 8.625-11 14.402z" /></svg>
-                    <span>For You</span>
-                </a>
-                <a href="/search" class="bottom-nav-item">
-                    <svg viewBox="0 0 24 24" class="bnav-icon" aria-hidden="true"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C8.01 14 6 11.99 6 9.5S8.01 5 10.5 5 15 7.01 15 9.5 12.99 14 10.5 14z" /></svg>
-                    <span>Search</span>
-                </a>
-                <a href="/user-settings" class="bottom-nav-item">
-                    <svg viewBox="0 0 24 24" class="bnav-icon" aria-hidden="true"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" /></svg>
-                    <span>Settings</span>
-                </a>
-            </nav>
-        </div>
-        
-        <div class="center-refresh-zone">
-            <button class="btn-refresh" @onclick="AiSearchNow" disabled="@isSearching">
-                <span class="refresh-icon-circle">
-                    <svg class="sync-icon" viewBox="0 0 24 24"><path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/></svg>
-                </span>
-            </button>
-        </div>
+            </div>
+        }
     </div>
+
+    <!-- Bottom Navigation -->
+    <nav class="bottom-nav" role="navigation" aria-label="Bottom navigation">
+        <a href="/" class="bottom-nav-item">
+            <svg viewBox="0 0 24 24" class="bnav-icon" aria-hidden="true"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z" /></svg>
+            <span>Home</span>
+        </a>
+        <a href="/just-for-you" class="bottom-nav-item active">
+            <svg viewBox="0 0 24 24" class="bnav-icon" aria-hidden="true"><path d="M12 21.593c-5.63-5.539-11-10.297-11-14.402 0-3.791 3.068-5.191 5.281-5.191 1.312 0 4.151.501 5.719 4.457 1.59-3.968 4.464-4.447 5.726-4.447 2.54 0 5.274 1.621 5.274 5.181 0 4.069-5.136 8.625-11 14.402z" /></svg>
+            <span>For You</span>
+        </a>
+        <a href="/search" class="bottom-nav-item">
+            <svg viewBox="0 0 24 24" class="bnav-icon" aria-hidden="true"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C8.01 14 6 11.99 6 9.5S8.01 5 10.5 5 15 7.01 15 9.5 12.99 14 10.5 14z" /></svg>
+            <span>Search</span>
+        </a>
+        <a href="/user-settings" class="bottom-nav-item">
+            <svg viewBox="0 0 24 24" class="bnav-icon" aria-hidden="true"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" /></svg>
+            <span>Settings</span>
+        </a>
+    </nav>
 </div>
 
 @code {
-    private List<News>? PersonalizedNews;
-    private bool isSearching;
-    private string? errorMessage;
+    private bool _isInitialized = false;
+    private List<Category> Categories { get; set; } = new();
+    private readonly ConcurrentDictionary<string, bool> _isLoading = new();
+    private readonly ConcurrentDictionary<string, News?> _hottestNewsByCategory = new();
+    private readonly ConcurrentDictionary<string, NewsSelectionSource> _sourceByCategory = new();
 
     protected override async Task OnInitializedAsync()
     {
-        await InitializePageAsync();
-    }
+        await sessionService.InitializeAsync();
 
-    private async Task InitializePageAsync()
-    {
-        try
+        if (sessionService.IsAuthenticated && sessionService.UserId.HasValue)
         {
-            await sessionService.InitializeAsync();
+            var userId = sessionService.UserId.Value;
 
-            if (!sessionService.IsAuthenticated)
+            // Query the user's preferred tags using a fresh DbContext from the factory
+            List<string> preferredTagNames;
+            await using (var db = await DbFactory.CreateDbContextAsync())
             {
-                Navigation.NavigateTo("/login", true);
-                return;
+                preferredTagNames = await db.UserPreferences
+                    .Where(up => up.IdUser == userId && up.Preference != null && up.Preference.Tag != null)
+                    .Select(up => up.Preference!.Tag!.Name)
+                    .Distinct()
+                    .ToListAsync();
             }
 
-            await LoadRecommendationsAsync();
+            if (preferredTagNames.Any())
+            {
+                Categories = preferredTagNames
+                    .Select(name => new Category(name, $"https://source.unsplash.com/random/500x500/?{Uri.EscapeDataString(name)}"))
+                    .ToList();
+
+                foreach (var category in preferredTagNames)
+                {
+                    _isLoading[category] = true;
+                    _hottestNewsByCategory[category] = null;
+                    _sourceByCategory[category] = NewsSelectionSource.None;
+                }
+
+                // Load categories in parallel; each category has an independent 3-minute budget
+                _ = LoadAllCategoriesAsync(preferredTagNames);
+            }
         }
-        catch (Exception ex)
-        {
-            Console.Error.WriteLine($"Error initializing Just For You page: {ex}");
-            errorMessage = "Could not load personalized news.";
-        }
+
+        _isInitialized = true;
     }
 
-    private async Task LoadRecommendationsAsync()
+    private async Task LoadAllCategoriesAsync(IReadOnlyCollection<string> categories)
     {
-        errorMessage = null;
-
-        if (sessionService.UserId == null)
-        {
-            PersonalizedNews = new List<News>();
-            return;
-        }
-
-        try
-        {
-            var userId = sessionService.UserId.Value;
-            var recommendations = await recommendationEngine.GetPersonalizedNewsOnePerPreferenceAsync(userId);
-            PersonalizedNews = recommendations?.ToList() ?? new List<News>();
-
-            Console.WriteLine($"Personalized news loaded: {PersonalizedNews.Count}");
-        }
-        catch (Exception ex)
-        {
-            Console.Error.WriteLine($"Error loading personalized news: {ex}");
-            PersonalizedNews = null;
-            errorMessage = "An error occurred while loading news. Check the logs.";
-        }
+        var tasks = categories.Select(LoadCategoryNewsAsync);
+        await Task.WhenAll(tasks);
+        await InvokeAsync(StateHasChanged);
     }
 
-    private async Task AiSearchNow()
+    private async Task LoadCategoryNewsAsync(string category)
     {
-        if (isSearching || sessionService.UserId == null) return;
-
-        isSearching = true;
-        errorMessage = null;
-
         try
         {
-            var userId = sessionService.UserId.Value;
-            Console.WriteLine($"Starting AI news search for user {userId}");
+            using var timeoutCts = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+            var userId = sessionService.IsAuthenticated ? sessionService.UserId : null;
 
-            await recommendationEngine.ExecuteNewsSearchWorkflowAsync(userId, numSearches: 6);
-            Console.WriteLine("AI news search workflow completed.");
+            // The category service owns the complete fallback workflow:
+            // 1) recent unseen DB news, 2) AI search, 3) older unseen DB news,
+            // 4) unrestricted AI search, 5) random DB fallback.
+            var result = await CategoryNewsService.GetNewsForCategoryAsync(category, userId, timeoutCts.Token);
 
-            await LoadRecommendationsAsync();
+            _hottestNewsByCategory[category] = result.News;
+            _sourceByCategory[category] = result.Source;
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"Error executing AI news search: {ex}");
-            errorMessage = "The AI encountered an error while searching or saving news.";
+            Console.Error.WriteLine($"Unexpected error loading personalized category {category}: {ex}");
+            _hottestNewsByCategory[category] = null;
+            _sourceByCategory[category] = NewsSelectionSource.None;
         }
         finally
         {
-            isSearching = false;
+            _isLoading[category] = false;
             await InvokeAsync(StateHasChanged);
         }
     }
+
+    private async Task OpenCategoryNews(string category, News? news)
+    {
+        if (news == null || news.IdNews <= 0) return;
+
+        if (sessionService.IsAuthenticated && sessionService.UserId.HasValue)
+        {
+            var userId = sessionService.UserId.Value;
+            await RecommendationEngine.RegisterCategoryClickAsync(userId, news.IdNews);
+            await CategoryNewsService.RegisterNewsViewAsync(userId, news.IdNews);
+        }
+
+        Navigation.NavigateTo($"/news-detail/{news.IdNews}");
+    }
+
+    public record Category(string Name, string BackupImageUrl);
 }

@@ -34,7 +34,7 @@ public class RecommendationEngine
     public async Task<List<string>> ExecuteNewsSearchWorkflowAsync(int userId, int numSearches = 4)
     {
         var ingested = new List<string>();
-        
+
         // Setup local references to remove "possibly null" dereference warnings later on
         var llm = _llmService;
         var ingest = _newsIngest;
@@ -45,12 +45,12 @@ public class RecommendationEngine
         }
 
         _logger?.LogInformation("STEP 1: Loading user preferences for userId={UserId}", userId);
-        
+
         var userPreferencesList = await _context.UserPreferences
             .Include(up => up.Preference)
             .Where(up => up.IdUser == userId)
             .ToListAsync();
-            
+
         // Clean out possible nulls structurally to ensure the engine functions correctly
         var userPreferences = userPreferencesList.Select(up => up.Preference!).Where(p => p != null).ToList();
 
@@ -70,7 +70,7 @@ public class RecommendationEngine
         while (ingested.Count < numSearches && searchCount < numSearches * 2)
         {
             var pref = topPrefs.Count > 0 ? topPrefs[prefIndex % topPrefs.Count] : userPreferences.First();
-            
+
             // Fixed CS8602: added null propagation
             var topic = pref?.Tag?.Name ?? pref?.IdTag.ToString() ?? "News";
             var query = $"{topic}";
@@ -150,7 +150,7 @@ public class RecommendationEngine
     public async Task<List<string>> SearchAndIngestForUserAsync(int userId, int perPref = 1, int maxTotal = 4)
     {
         var ingested = new List<string>();
-        
+
         var llm = _llmService;
         var ingest = _newsIngest;
         if (llm == null || ingest == null)
@@ -163,7 +163,7 @@ public class RecommendationEngine
             .Include(up => up.Preference)
             .Where(up => up.IdUser == userId)
             .ToListAsync();
-            
+
         var userPreferences = userPreferencesList.Select(up => up.Preference!).Where(p => p != null).ToList();
 
         if (userPreferences.Count == 0)
@@ -193,7 +193,7 @@ public class RecommendationEngine
             }
 
             var first = results.FirstOrDefault();
-            
+
             if (!string.IsNullOrWhiteSpace(first.Url) && !ingested.Contains(first.Url))
             {
                 try
@@ -221,7 +221,7 @@ public class RecommendationEngine
             .Include(up => up.Preference)
             .Where(up => up.IdUser == userId)
             .ToListAsync();
-            
+
         var userPreferences = userPreferencesList.Select(up => up.Preference!).Where(p => p != null).ToList();
 
         var noticiasVistasIds = await _context.UserNews
@@ -308,7 +308,7 @@ public class RecommendationEngine
 
         var candidateTexts = new List<string>();
         var detailsToSummarize = new List<DetailNews>();
-        
+
         foreach (var item in rerankPool)
         {
             var n = item.Noticia;
@@ -346,7 +346,7 @@ public class RecommendationEngine
         }
 
         var llmScores = new List<double?>();
-        const int localBatchSize = 8; 
+        const int localBatchSize = 8;
         for (int i = 0; i < candidateTexts.Count; i += localBatchSize)
         {
             var batch = candidateTexts.Skip(i).Take(localBatchSize).ToList();
@@ -376,7 +376,7 @@ public class RecommendationEngine
     {
         var fallback = Summarize(detail, maxChars);
         var llm = _llmService;
-        
+
         if (llm == null) return fallback;
 
         var text = detail?.Context ?? string.Empty;
@@ -434,13 +434,13 @@ public class RecommendationEngine
     private double CalculateScore(News? news, List<Preference> userPreferences)
     {
         if (news == null) return 0.0;
-        
+
         double score = 0.0;
 
         var matchingPref = userPreferences.FirstOrDefault(p => p != null && p.IdTag == news.IdTag);
         if (matchingPref != null)
         {
-            score += matchingPref.Weight * 2.0; 
+            score += matchingPref.Weight * 2.0;
         }
 
         int totalVotes = news.Likes + news.Dislikes;
@@ -621,7 +621,7 @@ public class RecommendationEngine
     /// <summary>
     /// Busca noticias vía LM Studio para una categoría de Home, resume, categoriza y persiste en BD.
     /// </summary>
-    public async Task<News?> ExecuteAiSearchForCategoryAsync(string categoryName)
+    public async Task<News?> ExecuteAiSearchForCategoryAsync(string categoryName, bool ignoreOneYearRestriction = false, CancellationToken cancellationToken = default)
     {
         var llm = _llmService;
         var ingest = _newsIngest;
@@ -639,19 +639,28 @@ public class RecommendationEngine
             return null;
         }
 
-        var tag = await _context.Tags
-            .FirstOrDefaultAsync(t => t.Name.ToLower() == categoryName.ToLower());
+        var tag = await _context.Tags.FirstOrDefaultAsync(t => t.Name.ToLower() == categoryName.ToLower(), cancellationToken);
         if (tag == null)
         {
             tag = new Tag { Name = match.Category };
             _context.Tags.Add(tag);
-            await _context.SaveChangesAsync();
+            await _context.SaveChangesAsync(cancellationToken);
         }
 
         List<(string Title, string Url, string Snippet)> results;
         try
         {
-            results = await llm.SearchWebAsync(match.SearchQuery, 5);
+            var query = match.SearchQuery;
+
+            // First AI attempt: search within the last year. The unrestricted
+            // retry omits this restriction by setting ignoreOneYearRestriction=true.
+            if (!ignoreOneYearRestriction)
+            {
+                var oneYearAgo = DateTime.UtcNow.AddYears(-1);
+                query += $" published within the last year after {oneYearAgo:yyyy-MM-dd}";
+            }
+
+            results = await llm.SearchWebAsync(query, 5);
         }
         catch (Exception ex)
         {
@@ -659,34 +668,59 @@ public class RecommendationEngine
             return null;
         }
 
-        if (results.Count == 0) return null;
+        // Filter out URLs that are already stored in the database for this category
+        var dbUrls = await _context.News.Where(n => n.IdTag == tag.IdTag).Select(n => n.Hyperlink).ToListAsync(cancellationToken);
+        var validResults = results.Where(r => !string.IsNullOrWhiteSpace(r.Url) && !dbUrls.Contains(r.Url)).ToList();
 
-        var picked = results[Random.Shared.Next(results.Count)];
-        if (string.IsNullOrWhiteSpace(picked.Url)) return null;
+        if (validResults.Count == 0) return null;
 
-        var bodyText = string.IsNullOrWhiteSpace(picked.Snippet) ? picked.Title : picked.Snippet;
-        string aiSummary;
+        var picked = validResults[Random.Shared.Next(validResults.Count)];
+
+        // The search result snippet is NOT the article body. Open the selected URL
+        // with the LLM web-search plugin and extract the complete main article text.
+        string? fullBodyText = null;
         try
         {
-            aiSummary = await SummarizeTextAsync(bodyText, 220);
+            fullBodyText = await llm.ExtractArticleBodyTextAsync(picked.Url, cancellationToken);
+            if (!string.IsNullOrWhiteSpace(fullBodyText))
+            {
+                _logger?.LogInformation(
+                    "Extracted full article body for {Url}: {Length} characters",
+                    picked.Url,
+                    fullBodyText.Length);
+            }
+            else
+            {
+                _logger?.LogWarning("LLM could not extract article body for {Url}", picked.Url);
+            }
         }
-        catch
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            aiSummary = bodyText.Length <= 220 ? bodyText : bodyText[..220] + "...";
+            _logger?.LogWarning("Article body extraction was canceled for {Url}", picked.Url);
+            throw;
         }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "Article body extraction failed for {Url}", picked.Url);
+        }
+
+        // Keep the search snippet only as a summary fallback. Never store it as
+        // FullBodyText because it is not the complete article.
+        var summarySource = !string.IsNullOrWhiteSpace(fullBodyText)
+            ? fullBodyText
+            : (!string.IsNullOrWhiteSpace(picked.Snippet) ? picked.Snippet : picked.Title);
+
+        string aiSummary;
+        try { aiSummary = await SummarizeTextAsync(summarySource, 220); }
+        catch { aiSummary = summarySource.Length <= 220 ? summarySource : summarySource[..220] + "..."; }
 
         News news;
         try
         {
             news = await ingest.SaveOrUpdateNewsAsync(
-                picked.Url,
-                bodyText,
-                picked.Title,
-                tag.IdTag,
-                isSfw: true,
-                secureLink: true,
-                isAi: true,
-                newsDate: DateTime.UtcNow);
+                picked.Url, aiSummary, picked.Title, tag.IdTag,
+                isSfw: true, secureLink: true, isAi: true, newsDate: DateTime.UtcNow,
+                fullBodyText: fullBodyText);
         }
         catch (Exception ex)
         {
@@ -697,13 +731,65 @@ public class RecommendationEngine
         if (news.DetailNews != null)
         {
             news.DetailNews.AiSummary = aiSummary;
-            await _context.SaveChangesAsync();
+            // The article has already been successfully ingested. Persist the
+            // generated summary even if the page-level timeout has elapsed.
+            await _context.SaveChangesAsync(CancellationToken.None);
         }
 
         return await _context.News
             .Include(n => n.Tag)
             .Include(n => n.DetailNews)
-            .FirstOrDefaultAsync(n => n.IdNews == news.IdNews);
+            .FirstOrDefaultAsync(n => n.IdNews == news.IdNews, CancellationToken.None);
+    }
+
+    private static bool HasUsableFullBodyText(string? body)
+    {
+        if (string.IsNullOrWhiteSpace(body)) return false;
+
+        var value = body.Trim();
+
+        // Old prototype records used this placeholder instead of real article text.
+        if (value.StartsWith("This is placeholder raw data gathered from analyzing the article", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        return value.Length >= 100;
+    }
+
+    /// <summary>
+    /// Ensures an existing news record has its full article body. This is used by
+    /// NewsDetails so older database rows created before full-body extraction was
+    /// implemented are also backfilled when the user opens them.
+    /// </summary>
+    public async Task<string?> EnsureFullBodyTextAsync(int newsId, CancellationToken cancellationToken = default)
+    {
+        var news = await _context.News
+            .Include(n => n.DetailNews)
+            .FirstOrDefaultAsync(n => n.IdNews == newsId, cancellationToken);
+
+        if (news == null || news.DetailNews == null || string.IsNullOrWhiteSpace(news.Hyperlink))
+            return news?.DetailNews?.FullBodyText;
+
+        if (HasUsableFullBodyText(news.DetailNews.FullBodyText))
+            return news.DetailNews.FullBodyText;
+
+        if (_llmService == null)
+            return null;
+
+        var normalizedUrl = news.Hyperlink.Trim();
+        var body = await _llmService.ExtractArticleBodyTextAsync(normalizedUrl, cancellationToken);
+
+        if (string.IsNullOrWhiteSpace(body))
+            return null;
+
+        news.DetailNews.FullBodyText = body.Trim();
+        await _context.SaveChangesAsync(cancellationToken);
+
+        _logger?.LogInformation(
+            "Backfilled FullBodyText for News id={NewsId}: {Length} characters",
+            newsId,
+            news.DetailNews.FullBodyText.Length);
+
+        return news.DetailNews.FullBodyText;
     }
 
     /// <summary>
@@ -722,67 +808,91 @@ public class RecommendationEngine
             .Where(p => p != null)
             .ToList();
 
-        if (preferences.Count == 0)
-        {
-            return new List<News>();
-        }
+        if (preferences.Count == 0) return new List<News>();
 
-        var tagIds = preferences!
-            .Select(p => p!.IdTag)
-            .Distinct()
-            .ToList();
+        var tagIds = preferences.Select(p => p!.IdTag).Distinct().ToList();
 
         var seenIds = await _context.UserNews
             .Where(un => un.IdUser == userId && un.Seen)
             .Select(un => un.IdNews)
             .ToListAsync();
 
-        var fechaLimite = DateTime.UtcNow.AddDays(-30);
+        var oneYearAgo = DateTime.UtcNow.AddYears(-1);
         var result = new List<News>();
 
+        // 1. Try to bring random, unseen news < 1 year old
         foreach (var tagId in tagIds)
         {
             var item = await _context.News
                 .Include(n => n.Tag)
                 .Include(n => n.DetailNews)
-                .Where(n => n.IdTag == tagId && n.CapturedDate >= fechaLimite)
-                .OrderByDescending(n => n.CapturedDate)
+                .Where(n => n.IdTag == tagId && n.CapturedDate >= oneYearAgo && !seenIds.Contains(n.IdNews))
+                .OrderBy(n => EF.Functions.Random())
                 .FirstOrDefaultAsync();
 
-            if (item != null && !seenIds.Contains(item.IdNews))
-            {
-                result.Add(item);
-            }
+            if (item != null) result.Add(item);
         }
 
+        // 2. If the AI is missing categories (none left unseen or < 1 year old), run AI search
         if (result.Count < tagIds.Count && _llmService != null && _newsIngest != null)
         {
+            var missingTags = tagIds.Except(result.Select(r => r.IdTag)).ToList();
+
             try
             {
-                await ExecuteNewsSearchWorkflowAsync(userId, numSearches: Math.Max(tagIds.Count, 4));
+                await ExecuteNewsSearchWorkflowAsync(userId, numSearches: Math.Max(missingTags.Count, 4));
             }
             catch (Exception ex)
             {
                 _logger?.LogWarning(ex, "AI workflow failed while filling personalized feed");
             }
 
-            result.Clear();
-            foreach (var tagId in tagIds)
+            // Re-check DB for the newly ingested news
+            foreach (var tagId in missingTags)
             {
                 var item = await _context.News
                     .Include(n => n.Tag)
                     .Include(n => n.DetailNews)
-                    .Where(n => n.IdTag == tagId && n.CapturedDate >= fechaLimite)
-                    .OrderByDescending(n => n.CapturedDate)
+                    .Where(n => n.IdTag == tagId && n.CapturedDate >= oneYearAgo && !seenIds.Contains(n.IdNews))
+                    .OrderBy(n => EF.Functions.Random())
                     .FirstOrDefaultAsync();
 
                 if (item != null)
                 {
                     result.Add(item);
                 }
+                else
+                {
+                    // 3. Absolute fallback: bring ONE from the database
+                    var fallbackItem = await _context.News
+                        .Include(n => n.Tag)
+                        .Include(n => n.DetailNews)
+                        .Where(n => n.IdTag == tagId)
+                        .OrderBy(n => EF.Functions.Random())
+                        .FirstOrDefaultAsync();
+
+                    if (fallbackItem != null) result.Add(fallbackItem);
+                }
+            }
+        }
+        else if (result.Count < tagIds.Count)
+        {
+            // If AI service is down, still apply absolute DB fallback for missing categories
+            var missingTags = tagIds.Except(result.Select(r => r.IdTag)).ToList();
+            foreach (var tagId in missingTags)
+            {
+                var fallbackItem = await _context.News
+                    .Include(n => n.Tag)
+                    .Include(n => n.DetailNews)
+                    .Where(n => n.IdTag == tagId)
+                    .OrderBy(n => EF.Functions.Random())
+                    .FirstOrDefaultAsync();
+
+                if (fallbackItem != null) result.Add(fallbackItem);
             }
         }
 
+        // (The AI summary generation loop remains the same at the bottom of this method...)
         var llm = _llmService;
         if (llm != null)
         {
@@ -802,7 +912,7 @@ public class RecommendationEngine
 
         return result;
     }
-    
+
     public async Task<List<string>> GetUserPreferencesAsync(int userId)
     {
         var userPreferencesList = await _context.UserPreferences
@@ -810,7 +920,7 @@ public class RecommendationEngine
                 .ThenInclude(p => p != null ? p.Tag : null)
             .Where(up => up.IdUser == userId)
             .ToListAsync();
-            
+
         var userPreferences = userPreferencesList.Select(up => up.Preference!).Where(p => p != null).ToList();
 
         return userPreferences

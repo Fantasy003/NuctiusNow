@@ -1,13 +1,12 @@
 @page "/"
 
-@using Microsoft.EntityFrameworkCore
 @using System.Collections.Concurrent
 @using NuctiusNow.Data
 @using NuctiusNow.Services
 @using NuctiusNow.Components.User_Related
-@inject ApplicationDbContext DbContext
 @inject UserSessionService sessionService
 @inject RecommendationEngine RecommendationEngine
+@inject CategoryNewsService CategoryNewsService
 @inject NavigationManager Navigation
 
 <PageTitle>NuctiusNow - Home</PageTitle>
@@ -40,6 +39,11 @@
                             <span class="category-tag-pill">@cat.Name</span>
                             <h2 class="category-title">@(hottestNews.DetailNews?.Keyword ?? "No Title Available")</h2>
                             <span class="news-meta">@hottestNews.CapturedDate.ToString("dd MMM yyyy")</span>
+
+                            @if (_sourceByCategory.TryGetValue(cat.Name, out var source) && source == NewsSelectionSource.DatabaseRandomFallback)
+                            {
+                                <span class="news-status">Showing an older article</span>
+                            }
                         }
                         else
                         {
@@ -58,6 +62,7 @@
     private List<Category> Categories { get; set; } = new();
     private readonly ConcurrentDictionary<string, bool> _isLoading = new();
     private readonly ConcurrentDictionary<string, News?> _hottestNewsByCategory = new();
+    private readonly ConcurrentDictionary<string, NewsSelectionSource> _sourceByCategory = new();
 
     protected override async Task OnInitializedAsync()
     {
@@ -66,42 +71,48 @@
         var mapping = InternetSearchService.GetCategoryMapping();
         Categories = mapping.Select(m => new Category(m.Category, $"https://source.unsplash.com/random/500x500/?{m.Category}")).ToList();
 
-        foreach (var category in mapping.Select(x => x.Category).ToList())
+        var categoryNames = Categories.Select(x => x.Name).ToList();
+
+        foreach (var category in categoryNames)
         {
             _isLoading[category] = true;
             _hottestNewsByCategory[category] = null;
+            _sourceByCategory[category] = NewsSelectionSource.None;
         }
 
-        foreach (var category in mapping.Select(x => x.Category).ToList())
-        {
-            _ = LoadCategoryNewsAsync(category);
-        }
+        // Fire parallel background loading using factory-isolated DB contexts
+        _ = LoadAllCategoriesAsync(categoryNames);
+    }
+
+    private async Task LoadAllCategoriesAsync(IReadOnlyCollection<string> categories)
+    {
+        var tasks = categories.Select(LoadCategoryNewsAsync);
+        await Task.WhenAll(tasks);
+        await InvokeAsync(StateHasChanged);
     }
 
     private async Task LoadCategoryNewsAsync(string category)
     {
-        _isLoading[category] = true;
-        await InvokeAsync(StateHasChanged);
-
         try
         {
-            var news = await RecommendationEngine.ExecuteAiSearchForCategoryAsync(category);
+            using var timeoutCts = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+            var userId = sessionService.IsAuthenticated ? sessionService.UserId : null;
 
-            if (news == null)
+            var result = await CategoryNewsService.GetNewsForCategoryAsync(category, userId, timeoutCts.Token);
+
+            _hottestNewsByCategory[category] = result.News;
+            _sourceByCategory[category] = result.Source;
+
+            if (result.AiFailed)
             {
-                news = await DbContext.News
-                    .Include(n => n.Tag)
-                    .Include(n => n.DetailNews)
-                    .Where(n => n.Tag != null && n.Tag.Name == category)
-                    .OrderByDescending(n => n.CapturedDate)
-                    .FirstOrDefaultAsync();
+                Console.WriteLine($"AI failed for {category}. Source: {result.Source}");
             }
-
-            _hottestNewsByCategory[category] = news;
         }
-        catch
+        catch (Exception ex)
         {
-            // Mantener estado vacío para la categoría si falla la IA
+            Console.Error.WriteLine($"Unexpected error loading category {category}: {ex}");
+            _hottestNewsByCategory[category] = null;
+            _sourceByCategory[category] = NewsSelectionSource.None;
         }
         finally
         {
@@ -112,14 +123,13 @@
 
     private async Task OpenCategoryNews(string category, News? news)
     {
-        if (news == null || news.IdNews <= 0)
-        {
-            return;
-        }
+        if (news == null || news.IdNews <= 0) return;
 
         if (sessionService.IsAuthenticated && sessionService.UserId.HasValue)
         {
-            await RecommendationEngine.RegisterCategoryClickAsync(sessionService.UserId.Value, news.IdNews);
+            var userId = sessionService.UserId.Value;
+            await RecommendationEngine.RegisterCategoryClickAsync(userId, news.IdNews);
+            await CategoryNewsService.RegisterNewsViewAsync(userId, news.IdNews);
         }
 
         Navigation.NavigateTo($"/news-detail/{news.IdNews}");

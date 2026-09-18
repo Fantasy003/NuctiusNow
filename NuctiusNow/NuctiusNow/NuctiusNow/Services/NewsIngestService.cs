@@ -23,16 +23,15 @@ public class NewsIngestService
     /// Creates a DetailNews record for the article body and links it from News.
     /// </summary>
     public async Task<News> SaveOrUpdateNewsAsync(string hyperlink, string? contextText, string? keyword, int idTag,
-        bool isSfw = true, bool secureLink = true, bool isAi = false, DateTime? newsDate = null)
+        bool isSfw = true, bool secureLink = true, bool isAi = false, DateTime? newsDate = null,
+        string? fullBodyText = null)
     {
         if (string.IsNullOrWhiteSpace(hyperlink)) throw new ArgumentException("hyperlink required", nameof(hyperlink));
 
-        // Defensive truncation: some DB columns (e.g. hyperlink) are limited to 150 chars in the schema.
-        // Truncate inputs to avoid DB exceptions (22001) and keep app stable. If you prefer, update DB schema instead.
-        const int MaxHyperlinkLength = 150;
-        const int MaxKeywordLength = 150;
-        if (hyperlink.Length > MaxHyperlinkLength) hyperlink = hyperlink.Substring(0, MaxHyperlinkLength);
-        if (!string.IsNullOrWhiteSpace(keyword) && keyword.Length > MaxKeywordLength) keyword = keyword.Substring(0, MaxKeywordLength);
+        // PostgreSQL stores hyperlink as text, so never truncate the URL.
+        const int MaxKeywordLength = 255;
+        if (!string.IsNullOrWhiteSpace(keyword) && keyword.Length > MaxKeywordLength)
+            keyword = keyword.Substring(0, MaxKeywordLength);
 
         // Try to find existing news by hyperlink
         var existing = await _context.News.Include(n => n.DetailNews).FirstOrDefaultAsync(n => n.Hyperlink == hyperlink);
@@ -62,6 +61,28 @@ public class NewsIngestService
                 }
             }
 
+            if (!string.IsNullOrWhiteSpace(fullBodyText))
+            {
+                if (existing.DetailNews == null)
+                {
+                    var detail = new DetailNews
+                    {
+                        Context = contextText,
+                        Keyword = keyword,
+                        FullBodyText = fullBodyText,
+                        NewsDate = newsDate ?? DateTime.UtcNow
+                    };
+                    _context.DetailNews.Add(detail);
+                    await _context.SaveChangesAsync();
+                    existing.IdDetailNews = detail.IdDetailNews;
+                    existing.DetailNews = detail;
+                }
+                else
+                {
+                    existing.DetailNews.FullBodyText = fullBodyText;
+                }
+            }
+
             existing.IdTag = idTag;
             existing.IsSfw = isSfw;
             existing.SecureLink = secureLink;
@@ -78,6 +99,7 @@ public class NewsIngestService
         {
             Context = contextText,
             Keyword = keyword,
+            FullBodyText = string.IsNullOrWhiteSpace(fullBodyText) ? null : fullBodyText.Trim(),
             NewsDate = newsDate ?? DateTime.UtcNow
         };
         _context.DetailNews.Add(newDetail);
@@ -103,3 +125,4 @@ public class NewsIngestService
         return news;
     }
 }
+

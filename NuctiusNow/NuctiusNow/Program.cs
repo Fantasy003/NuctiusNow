@@ -13,9 +13,17 @@ builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents()
     .AddInteractiveWebAssemblyComponents();
 
-// Configuraci�n de PostgreSQL con Entity Framework Core
+// Configuracion de PostgreSQL con Entity Framework Core
 var connectionString = builder.Configuration.GetConnectionString("PostgresConnection");
-builder.Services.AddDbContext<ApplicationDbContext>(options =>
+
+// Register the standard DbContext, but explicitly set the options lifetime to Singleton
+builder.Services.AddDbContext<ApplicationDbContext>(
+    options => options.UseNpgsql(connectionString),
+    contextLifetime: ServiceLifetime.Scoped,
+    optionsLifetime: ServiceLifetime.Singleton); // <-- This fixes the DI conflict
+
+// Register the factory using the shared Singleton options
+builder.Services.AddDbContextFactory<ApplicationDbContext>(options =>
     options.UseNpgsql(connectionString));
 
 // Registro del servicio de autenticaci�n
@@ -24,6 +32,7 @@ builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<UserSessionService>();
 // Registro del motor de recomendaciones (AI helper)
 builder.Services.AddScoped<RecommendationEngine>();
+builder.Services.AddScoped<CategoryNewsService>(); // ADDED
 // Registro del servicio LLM local (llamar a un servidor LLM local por HTTP)
 builder.Services.AddScoped<ILocalLlmService, LocalLlmService>();
 // Servicio para almacenar noticias capturadas desde la web

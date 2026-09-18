@@ -39,8 +39,13 @@ namespace NuctiusNow.Migrations
                         .HasColumnType("text")
                         .HasColumnName("context");
 
-                    b.Property<string>("Keyword")
+                    b.Property<string>("FullBodyText")
                         .HasColumnType("text")
+                        .HasColumnName("full_body_text");
+
+                    b.Property<string>("Keyword")
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
                         .HasColumnName("keyword");
 
                     b.Property<DateTime>("NewsDate")

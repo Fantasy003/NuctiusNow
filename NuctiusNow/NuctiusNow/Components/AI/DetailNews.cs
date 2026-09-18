@@ -13,12 +13,14 @@ public class DetailNews
     public int IdDetailNews { get; set; }
 
     [Column("context")]
-    [MaxLength(1000)] // Increased to handle full AI summaries
     public string? Context { get; set; }
 
     [Column("keyword")]
     [MaxLength(255)] // Increased to handle long article titles
     public string? Keyword { get; set; }
+
+    [Column("full_body_text")]
+    public string? FullBodyText { get; set; }
 
     [Column("news_date")]
     public DateTime NewsDate { get; set; }
