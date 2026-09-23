@@ -91,7 +91,7 @@ else
                         <span class="action-count">@currentNews.Dislikes</span>
                     </button>
                 </div>
-
+                
                 <button class="btn-action btn-share" @onclick="ShareArticle">
                     <span class="action-icon">⤴</span> Share
                 </button>
@@ -176,7 +176,7 @@ else
     protected override async Task OnInitializedAsync()
     {
         await sessionService.InitializeAsync();
-
+        
         isLoading = true;
         currentNews = await DbContext.News
             .Include(n => n.Tag)
@@ -279,7 +279,7 @@ else
     {
         await JS.InvokeVoidAsync("history.back");
     }
-
+    
     private void ShareArticle()
     {
     }
@@ -393,4 +393,3 @@ else
         }
     }
 }
-

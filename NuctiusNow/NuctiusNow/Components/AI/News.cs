@@ -1,7 +1,9 @@
 ﻿using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
+#pragma warning disable IDE0130 // Namespace does not match folder structure
 namespace NuctiusNow.Components.User_Related;
+#pragma warning restore IDE0130
 
 [Table("news")]
 public class News

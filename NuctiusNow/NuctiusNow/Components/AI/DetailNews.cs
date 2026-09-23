@@ -12,11 +12,14 @@ public class DetailNews
     [Column("id_detail_news")]
     public int IdDetailNews { get; set; }
 
+    [Column("image_url")]
+    public string? ImageUrl { get; set; }
+
     [Column("context")]
     public string? Context { get; set; }
 
     [Column("keyword")]
-    [MaxLength(255)] // Increased to handle long article titles
+    [MaxLength(255)]
     public string? Keyword { get; set; }
 
     [Column("full_body_text")]
@@ -27,4 +30,11 @@ public class DetailNews
 
     [Column("ai_summary")]
     public string? AiSummary { get; set; }
+
+    [Column("body_source")]
+    [MaxLength(32)]
+    public string BodySource { get; set; } = "Unknown";
+
+    // Navigation Properties
+    public virtual News? News { get; set; }
 }

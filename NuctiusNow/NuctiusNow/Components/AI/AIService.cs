@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using NuctiusNow.Data;
 using NuctiusNow.Components.User_Related;
 
-namespace NuctiusNow.Components.AI;
+namespace NuctiusNow.Components.User_Related;
 
 public class AIService
 {

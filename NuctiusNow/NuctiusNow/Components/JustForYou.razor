@@ -18,74 +18,150 @@
     <div class="jfy-wrapper">
         @if (!_isInitialized)
         {
-            <p>Loading your preferences...</p>
+            <section class="jfy-state-card">
+                <span class="section-kicker">NUCTIUSNOW / FOR YOU</span>
+                <h1>Loading your feed…</h1>
+                <p>We are preparing recommendations from your preferences and recent interactions.</p>
+            </section>
         }
         else if (!sessionService.IsAuthenticated)
         {
-            <div class="auth-message" style="text-align: center; padding: 3rem 1rem;">
-                <h2>You need to be logged in</h2>
-                <p style="color: var(--text-muted); margin-bottom: 1.5rem;">Sign in to see a news feed tailored specifically to your interests.</p>
-                <button class="btn-primary" style="padding: 0.75rem 1.5rem; background: var(--accent); border: none; border-radius: var(--radius-pill); color: white; cursor: pointer;" @onclick='() => Navigation.NavigateTo("/login")'>Log In</button>
-            </div>
+            <section class="jfy-state-card">
+                <span class="section-kicker">NUCTIUSNOW / FOR YOU</span>
+                <h1>Sign in to personalize your feed</h1>
+                <p>Log in to let the recommendation engine learn from the topics you follow and the stories you interact with.</p>
+                <button class="jfy-primary-button" type="button" @onclick='() => Navigation.NavigateTo("/login")'>
+                    Log in
+                </button>
+            </section>
         }
         else if (Categories.Count == 0)
         {
-            <div class="auth-message" style="text-align: center; padding: 3rem 1rem;">
-                <h2>No interests selected</h2>
-                <p style="color: var(--text-muted); margin-bottom: 1.5rem;">Update your profile preferences to start seeing personalized news here.</p>
-                <button class="btn-primary" style="padding: 0.75rem 1.5rem; background: var(--accent); border: none; border-radius: var(--radius-pill); color: white; cursor: pointer;" @onclick='() => Navigation.NavigateTo("/user-settings")'>Update Preferences</button>
-            </div>
+            <section class="jfy-state-card">
+                <span class="section-kicker">NUCTIUSNOW / FOR YOU</span>
+                <h1>Your feed needs a few interests</h1>
+                <p>Select some topics in your profile and NuctiusNow will start searching for matching stories.</p>
+                <button class="jfy-primary-button" type="button" @onclick='() => Navigation.NavigateTo("/user-settings")'>
+                    Update preferences
+                </button>
+            </section>
         }
         else
         {
-            <div class="jfy-grid">
+            <header class="jfy-header">
+                <div>
+                    <span class="section-kicker">NUCTIUSNOW / FOR YOU</span>
+                    <h1 class="jfy-heading">Just For You</h1>
+                    <p class="jfy-subheading">
+                        Fresh stories searched from the web using your preferences and the signals you create while browsing.
+                    </p>
+                </div>
+
+                <div class="jfy-header-actions">
+                    <span class="jfy-updated">
+                        @if (_lastRefreshAt.HasValue)
+                        {
+                            <span>Updated @_lastRefreshAt.Value.ToLocalTime().ToString("HH:mm")</span>
+                        }
+                        else
+                        {
+                            <span>Preparing feed</span>
+                        }
+                    </span>
+
+                    <button class="jfy-refresh-button"
+                            type="button"
+                            disabled="@_isRefreshing"
+                            @onclick="RefreshRecommendationsAsync">
+                        <svg viewBox="0 0 24 24" aria-hidden="true" class="jfy-refresh-icon">
+                            <path d="M17.65 6.35A7.95 7.95 0 0012 4V1L7 6l5 5V8a4 4 0 11-4 4H6a6 6 0 106-6 5.98 5.98 0 014.24 1.76l1.41-1.41z" />
+                        </svg>
+                        <span>@(_isRefreshing ? "Searching…" : "Refresh feed")</span>
+                    </button>
+                </div>
+            </header>
+
+            <div class="jfy-context-strip">
+                <div class="jfy-context-copy">
+                    <span class="context-label">CURRENT SIGNALS</span>
+                    <span class="context-text">Preferences + clicks + likes + comments + reading time</span>
+                </div>
+                <span class="context-dot"></span>
+                <span class="context-status">AI ACTIVE</span>
+            </div>
+
+            <main class="jfy-grid" aria-label="Personalized news feed">
                 @foreach (var cat in Categories)
                 {
                     var isLoading = _isLoading.GetValueOrDefault(cat.Name, false);
                     var hottestNews = _hottestNewsByCategory.GetValueOrDefault(cat.Name);
+                    var hasImage = HasNewsImage(hottestNews);
 
-                    <a class="news-box-link" role="button" tabindex="0"
-                       @onclick="async () => await OpenCategoryNews(cat.Name, hottestNews)"
-                       @onclick:preventDefault="true"
-                       @onkeydown="@(async e => { if (e.Key == "Enter") await OpenCategoryNews(cat.Name, hottestNews); })">
-
+                    <button class="news-box-link @GetCategoryToneClass(cat.Name)"
+                            type="button"
+                            disabled="@(isLoading || hottestNews == null)"
+                            @onclick="async () => await OpenCategoryNews(cat.Name, hottestNews)">
                         <article class="news-box">
-                            <div class="card-media" style="background-image: url('@cat.BackupImageUrl');">
-                                <span class="category-tag">@cat.Name</span>
-                            </div>
-                            <div class="card-body">
-                                @if (isLoading)
+                            <div class="card-media">
+                                @if (hasImage && hottestNews != null)
                                 {
-                                    <h2 class="news-title">Loading...</h2>
-                                    <p class="news-body">Fetching the latest insights tailored to your preferences...</p>
-                                }
-                                else if (hottestNews != null)
-                                {
-                                    <h2 class="news-title">@(hottestNews.DetailNews?.Keyword ?? "No Title Available")</h2>
-                                    <p class="news-body">@(hottestNews.DetailNews?.Context ?? "No summary available.")</p>
-
-                                    <span style="font-size: 0.75rem; color: var(--text-muted); display: block; margin-top: 0.5rem;">
-                                        @hottestNews.CapturedDate.ToString("dd MMM yyyy")
-                                        @if (_sourceByCategory.TryGetValue(cat.Name, out var source) && source == NewsSelectionSource.DatabaseRandomFallback)
-                                        {
-                                            <span class="news-status" style="margin-left: 10px; font-size: 0.65rem; color: rgba(255,255,255,0.7); background-color: rgba(255,255,255,0.15); padding: 0.2rem 0.5rem; border-radius: 4px;">Showing an older article</span>
-                                        }
-                                    </span>
+                                    <img class="news-overview-image"
+                                         src="@hottestNews.DetailNews!.ImageUrl"
+                                         alt="@(hottestNews.DetailNews?.Keyword ?? cat.Name)"
+                                         loading="lazy" />
                                 }
                                 else
                                 {
-                                    <h2 class="news-title">No recent news</h2>
-                                    <p class="news-body">We couldn't find any recent articles for this category.</p>
+                                    <div class="news-image-placeholder" aria-hidden="true">
+                                        <span>@GetCategoryInitial(cat.Name)</span>
+                                    </div>
+                                }
+
+                                <div class="card-media-shade"></div>
+                                <span class="category-tag">@cat.Name</span>
+                                <span class="category-rank">@cat.Rank.ToString("00")</span>
+                            </div>
+
+                            <div class="card-body">
+                                <div class="card-topline">
+                                    <span class="ai-badge">@GetSourceLabel(_sourceByCategory.GetValueOrDefault(cat.Name, NewsSelectionSource.None))</span>
+                                    <span class="category-weight">Preference @cat.Weight</span>
+                                </div>
+
+                                @if (isLoading)
+                                {
+                                    <h2 class="news-title">Searching for a fresh story…</h2>
+                                    <p class="news-body">The recommendation engine is checking new articles for this topic.</p>
+                                }
+                                else if (hottestNews != null)
+                                {
+                                    <h2 class="news-title">@(hottestNews.DetailNews?.Keyword ?? "Untitled story")</h2>
+                                    <p class="news-body">
+                                        @(hottestNews.DetailNews?.AiSummary
+                                            ?? hottestNews.DetailNews?.Context
+                                            ?? "No summary available.")
+                                    </p>
+
+                                    <div class="news-meta-row">
+                                        <span class="news-meta">
+                                            @((hottestNews.DetailNews?.NewsDate ?? hottestNews.CapturedDate).ToLocalTime().ToString("dd MMM yyyy"))
+                                        </span>
+                                        <span class="read-story">Open story <span aria-hidden="true">→</span></span>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <h2 class="news-title">No story found</h2>
+                                    <p class="news-body">The AI and database fallbacks could not find a usable article for this topic.</p>
                                 }
                             </div>
                         </article>
-                    </a>
+                    </button>
                 }
-            </div>
+            </main>
         }
     </div>
 
-    <!-- Bottom Navigation -->
     <nav class="bottom-nav" role="navigation" aria-label="Bottom navigation">
         <a href="/" class="bottom-nav-item">
             <svg viewBox="0 0 24 24" class="bnav-icon" aria-hidden="true"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z" /></svg>
@@ -107,7 +183,11 @@
 </div>
 
 @code {
-    private bool _isInitialized = false;
+    private bool _isInitialized;
+    private bool _initialRefreshStarted;
+    private bool _isRefreshing;
+    private DateTimeOffset? _lastRefreshAt;
+
     private List<Category> Categories { get; set; } = new();
     private readonly ConcurrentDictionary<string, bool> _isLoading = new();
     private readonly ConcurrentDictionary<string, News?> _hottestNewsByCategory = new();
@@ -121,69 +201,125 @@
         {
             var userId = sessionService.UserId.Value;
 
-            // Query the user's preferred tags using a fresh DbContext from the factory
-            List<string> preferredTagNames;
-            await using (var db = await DbFactory.CreateDbContextAsync())
-            {
-                preferredTagNames = await db.UserPreferences
-                    .Where(up => up.IdUser == userId && up.Preference != null && up.Preference.Tag != null)
-                    .Select(up => up.Preference!.Tag!.Name)
-                    .Distinct()
-                    .ToListAsync();
-            }
-
-            if (preferredTagNames.Any())
-            {
-                Categories = preferredTagNames
-                    .Select(name => new Category(name, $"https://source.unsplash.com/random/500x500/?{Uri.EscapeDataString(name)}"))
-                    .ToList();
-
-                foreach (var category in preferredTagNames)
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var preferredCategories = await db.UserPreferences
+                .Where(up => up.IdUser == userId && up.Preference != null && up.Preference.Tag != null)
+                .Select(up => new
                 {
-                    _isLoading[category] = true;
-                    _hottestNewsByCategory[category] = null;
-                    _sourceByCategory[category] = NewsSelectionSource.None;
-                }
+                    Name = up.Preference!.Tag!.Name,
+                    Weight = up.Preference.Weight
+                })
+                .ToListAsync();
 
-                // Load categories in parallel; each category has an independent 3-minute budget
-                _ = LoadAllCategoriesAsync(preferredTagNames);
+            preferredCategories = preferredCategories
+                .GroupBy(x => x.Name)
+                .Select(g => new
+                {
+                    Name = g.Key,
+                    Weight = g.Max(x => x.Weight)
+                })
+                .OrderByDescending(x => x.Weight)
+                .ThenBy(x => x.Name)
+                .ToList();
+
+            Categories = preferredCategories
+                .Select((item, index) => new Category(
+                    item.Name,
+                    item.Weight,
+                    index + 1))
+                .ToList();
+
+            foreach (var category in Categories)
+            {
+                _isLoading[category.Name] = true;
+                _hottestNewsByCategory[category.Name] = null;
+                _sourceByCategory[category.Name] = NewsSelectionSource.None;
             }
         }
 
         _isInitialized = true;
     }
 
-    private async Task LoadAllCategoriesAsync(IReadOnlyCollection<string> categories)
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        var tasks = categories.Select(LoadCategoryNewsAsync);
-        await Task.WhenAll(tasks);
-        await InvokeAsync(StateHasChanged);
+        if (!firstRender || _initialRefreshStarted || !sessionService.IsAuthenticated || Categories.Count == 0)
+            return;
+
+        _initialRefreshStarted = true;
+        await RefreshRecommendationsAsync();
     }
 
-    private async Task LoadCategoryNewsAsync(string category)
+    private async Task RefreshRecommendationsAsync()
+    {
+        if (!sessionService.IsAuthenticated || !sessionService.UserId.HasValue || Categories.Count == 0 || _isRefreshing)
+            return;
+
+        _isRefreshing = true;
+        foreach (var category in Categories)
+            _isLoading[category.Name] = true;
+
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            var userId = sessionService.UserId.Value;
+
+            // Sequential execution avoids overloading the local LLM server with
+            // several expensive article-extraction requests at the same time.
+            foreach (var category in Categories)
+            {
+                await LoadCategoryNewsAsync(category, userId);
+            }
+
+            _lastRefreshAt = DateTimeOffset.UtcNow;
+        }
+        finally
+        {
+            _isRefreshing = false;
+            foreach (var category in Categories)
+                _isLoading[category.Name] = false;
+
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task LoadCategoryNewsAsync(Category category, int userId)
     {
         try
         {
             using var timeoutCts = new CancellationTokenSource(TimeSpan.FromMinutes(3));
-            var userId = sessionService.IsAuthenticated ? sessionService.UserId : null;
 
-            // The category service owns the complete fallback workflow:
-            // 1) recent unseen DB news, 2) AI search, 3) older unseen DB news,
-            // 4) unrestricted AI search, 5) random DB fallback.
-            var result = await CategoryNewsService.GetNewsForCategoryAsync(category, userId, timeoutCts.Token);
+            // JFY intentionally asks the AI first on every page entry/refresh.
+            // If that search cannot produce a new article, CategoryNewsService
+            // falls back to unseen/old/random database articles.
+            var result = await CategoryNewsService.GetNewsForCategoryAsync(
+                category.Name,
+                userId,
+                timeoutCts.Token,
+                forceAiSearchFirst: true);
 
-            _hottestNewsByCategory[category] = result.News;
-            _sourceByCategory[category] = result.Source;
+            _hottestNewsByCategory[category.Name] = result.News;
+            _sourceByCategory[category.Name] = result.Source;
+
+            if (result.News != null)
+            {
+                var imageUrl = await RecommendationEngine.EnsureNewsImageAsync(
+                    result.News.IdNews,
+                    CancellationToken.None);
+
+                if (!string.IsNullOrWhiteSpace(imageUrl) && result.News.DetailNews != null)
+                    result.News.DetailNews.ImageUrl = imageUrl;
+            }
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"Unexpected error loading personalized category {category}: {ex}");
-            _hottestNewsByCategory[category] = null;
-            _sourceByCategory[category] = NewsSelectionSource.None;
+            Console.Error.WriteLine($"Unexpected error refreshing {category.Name}: {ex}");
+            _hottestNewsByCategory[category.Name] = null;
+            _sourceByCategory[category.Name] = NewsSelectionSource.None;
         }
         finally
         {
-            _isLoading[category] = false;
+            _isLoading[category.Name] = false;
             await InvokeAsync(StateHasChanged);
         }
     }
@@ -202,5 +338,26 @@
         Navigation.NavigateTo($"/news-detail/{news.IdNews}");
     }
 
-    public record Category(string Name, string BackupImageUrl);
+    private static bool HasNewsImage(News? news) =>
+        !string.IsNullOrWhiteSpace(news?.DetailNews?.ImageUrl);
+
+    private static string GetCategoryInitial(string category) =>
+        string.IsNullOrWhiteSpace(category) ? "N" : category.Trim()[0].ToString().ToUpperInvariant();
+
+    private static string GetCategoryToneClass(string category)
+    {
+        var value = (int)(uint)category.GetHashCode() % 5;
+        return $"tone-{value + 1}";
+    }
+
+    private static string GetSourceLabel(NewsSelectionSource source) => source switch
+    {
+        NewsSelectionSource.AiSearch => "AI FRESH",
+        NewsSelectionSource.DatabaseRecentUnseen => "NEW TO YOU",
+        NewsSelectionSource.DatabaseOldUnseen => "UNSEEN ARCHIVE",
+        NewsSelectionSource.DatabaseRandomFallback => "ARCHIVE FALLBACK",
+        _ => "WAITING"
+    };
+
+    public record Category(string Name, int Weight, int Rank);
 }

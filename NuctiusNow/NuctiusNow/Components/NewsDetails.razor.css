@@ -794,3 +794,223 @@
     line-height: 1.8;
     color: var(--text-primary);
 }
+
+.ai-generated-notice {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: 0.85rem 1rem;
+    margin-bottom: 1rem;
+    border-left: 4px solid var(--accent);
+    background: rgba(255, 193, 7, 0.08);
+    border-radius: 6px;
+}
+
+    .ai-generated-notice strong {
+        font-size: 0.9rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+    }
+
+    .ai-generated-notice span {
+        font-size: 0.85rem;
+        opacity: 0.85;
+    }
+
+.article-source-notice {
+    margin-bottom: 1rem;
+    font-size: 0.8rem;
+    opacity: 0.7;
+}
+
+/* =========================================================
+   NEWS SOURCE
+   ========================================================= */
+
+.source-section {
+    margin-bottom: 1.75rem;
+}
+
+.section-heading-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+    margin-bottom: 0.75rem;
+}
+
+.section-title {
+    margin: 0;
+    color: var(--text-primary);
+    font-family: var(--font-editorial);
+    font-size: 1.25rem;
+    font-weight: 700;
+}
+
+.section-description {
+    margin: 0.35rem 0 0;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    line-height: 1.5;
+}
+
+.section-badge,
+.ai-generated-badge {
+    flex-shrink: 0;
+    padding: 0.25rem 0.6rem;
+    border-radius: var(--radius-pill);
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+}
+
+.section-badge {
+    background: var(--bg-input);
+    color: var(--accent);
+}
+
+.ai-generated-badge {
+    background: var(--accent);
+    color: #fff;
+}
+
+.original-source-link {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    padding: 0.8rem 1rem;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--bg-input);
+    color: var(--accent);
+    text-decoration: none;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+}
+
+    .original-source-link:hover {
+        color: var(--accent);
+        text-decoration: underline;
+    }
+
+.source-link-icon {
+    flex-shrink: 0;
+    font-size: 1rem;
+}
+
+.source-link-text {
+    font-size: 0.85rem;
+}
+
+/* =========================================================
+   SUMMARY
+   ========================================================= */
+
+.summary-section {
+    margin-bottom: 2rem;
+    padding: 1.25rem;
+    border-left: 4px solid var(--accent);
+    border-radius: 8px;
+    background: var(--bg-input);
+}
+
+.summary-text {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 0.95rem;
+    line-height: 1.7;
+}
+
+/* =========================================================
+   AI ARTICLE
+   ========================================================= */
+
+.ai-article-section {
+    margin-bottom: 2rem;
+}
+
+.ai-disclosure {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    margin-bottom: 1.25rem;
+    padding: 0.9rem 1rem;
+    border-radius: 8px;
+    background: var(--bg-input);
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    line-height: 1.5;
+}
+
+    .ai-disclosure strong {
+        color: var(--text-primary);
+    }
+
+.ai-article-loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    padding: 3rem 1rem;
+    text-align: center;
+    color: var(--text-muted);
+}
+
+    .ai-article-loading p {
+        margin: 0;
+    }
+
+.ai-article-error {
+    padding: 1rem;
+    border-radius: 8px;
+    background: var(--bg-input);
+    color: var(--text-muted);
+    line-height: 1.6;
+}
+
+.full-article-body {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    color: var(--text-primary);
+    font-size: 1rem;
+    line-height: 1.9;
+}
+
+.section-empty {
+    margin: 0;
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+/* =========================================================
+   ACTIONS
+   ========================================================= */
+
+.article-actions-section {
+    margin-top: 2rem;
+    border-top: 1px solid var(--border);
+    padding-top: 1.5rem;
+}
+
+.action-label {
+    font-size: 0.8rem;
+}
+
+/* =========================================================
+   COMMENTS
+   ========================================================= */
+
+.comments-empty {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    font-style: italic;
+}
+
+.comment-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}

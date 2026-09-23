@@ -226,9 +226,9 @@ else
 
             userModel.Email = user.Email;
             userModel.Username = user.Username;
-            userModel.Birthday = user.Birthday ?? DateTime.Today;
+            userModel.Birthday = user.Birthday.Date > DateTime.MinValue ? user.Birthday.Date : DateTime.Today;
             userModel.Password = string.Empty;
-            userModel.Language = user.Language == 2 ? "Spanish" : "English";
+            userModel.Language = user.Language == "Spanish" ? "Spanish" : "English";
             userModel.Preferences = await authService.GetUserPreferencesAsync(sessionService.UserId.Value);
 
             userLoaded = true;

@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using NuctiusNow.Components.User_Related;
 using NuctiusNow.Data;
 
@@ -37,25 +37,43 @@ public class CategoryNewsService
         _logger = logger;
     }
 
-    public async Task<CategoryNewsResult> GetNewsForCategoryAsync(string category, int? userId, CancellationToken cancellationToken = default)
+    public async Task<CategoryNewsResult> GetNewsForCategoryAsync(
+        string category,
+        int? userId,
+        CancellationToken cancellationToken = default,
+        bool forceAiSearchFirst = false)
     {
         var oneYearAgo = DateTime.UtcNow.AddYears(-1);
 
-        // 1. First priority: unseen news whose publication date is within the last year.
-        var recentUnseen = await GetRandomNewsAsync(category, userId, minimumDate: oneYearAgo, onlyUnseen: true, cancellationToken);
-        if (recentUnseen != null)
+        // Normal mode: prefer something unseen from the last year.
+        // Refresh mode: deliberately ask the AI first so the feed cycles.
+        if (!forceAiSearchFirst)
         {
-            return new CategoryNewsResult { News = recentUnseen, Source = NewsSelectionSource.DatabaseRecentUnseen };
+            var recentUnseen = await GetRandomNewsAsync(
+                category,
+                userId,
+                minimumDate: oneYearAgo,
+                onlyUnseen: true,
+                cancellationToken);
+
+            if (recentUnseen != null)
+            {
+                return new CategoryNewsResult
+                {
+                    News = recentUnseen,
+                    Source = NewsSelectionSource.DatabaseRecentUnseen
+                };
+            }
         }
 
-        // 2. Ask AI to find and save a new article.
+        // Ask AI to find and save a new article.
         // We create a fresh scope so RecommendationEngine gets its own DbContext, preventing thread crashes.
         using var scope = _scopeFactory.CreateScope();
         var recommendationEngine = scope.ServiceProvider.GetRequiredService<RecommendationEngine>();
 
         try
         {
-            var aiNews = await recommendationEngine.ExecuteAiSearchForCategoryAsync(category, ignoreOneYearRestriction: false, cancellationToken);
+            var aiNews = await recommendationEngine.ExecuteAiSearchForCategoryAsync(category, userId, ignoreOneYearRestriction: false, cancellationToken: cancellationToken);
             if (aiNews != null)
             {
                 // UserNews with Seen=false explicitly represents an article that is
@@ -93,7 +111,7 @@ public class CategoryNewsService
         // 4. All database articles were already seen. Run AI again without the restriction.
         try
         {
-            var unrestrictedAiNews = await recommendationEngine.ExecuteAiSearchForCategoryAsync(category, ignoreOneYearRestriction: true, cancellationToken);
+            var unrestrictedAiNews = await recommendationEngine.ExecuteAiSearchForCategoryAsync(category, userId, ignoreOneYearRestriction: true, cancellationToken: cancellationToken);
             if (unrestrictedAiNews != null)
             {
                 // The unrestricted AI retry is also a new/available article, so register it

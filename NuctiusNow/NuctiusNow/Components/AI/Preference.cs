@@ -12,6 +12,11 @@ public class Tag
 
     [Column("name")]
     public string Name { get; set; } = string.Empty;
+
+    // Navigation Properties
+    public virtual ICollection<Preference> Preferences { get; set; } = new List<Preference>();
+    public virtual ICollection<News> News { get; set; } = new List<News>();
+    public virtual ICollection<UserPreferenceTag> UserPreferenceTags { get; set; } = new List<UserPreferenceTag>();
 }
 
 [Table("preferences")]
@@ -35,4 +40,7 @@ public class Preference
 
     [Column("is_sfw")]
     public bool IsSfw { get; set; } = true;
+
+    // Navigation Properties
+    public virtual ICollection<UserPreference> UserPreferences { get; set; } = new List<UserPreference>();
 }

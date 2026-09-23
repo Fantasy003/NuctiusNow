@@ -6,6 +6,7 @@ using System.Net.Http.Json;
 using System.Text.Json.Serialization;
 using NuctiusNow;
 using NuctiusNow.Data;
+using NuctiusNow.Components.User_Related;
 
 namespace NuctiusNow.Components.User_Related;
 
@@ -25,7 +26,7 @@ public class AuthService
     /// <summary>
     /// Registers a new user by hashing the password and saving to the database.
     /// </summary>
-    public async Task<(bool success, string message)> RegistrarAsync(User usuarioNuevo, string passwordPlana)
+    public async Task<(bool success, string message)> RegistrarAsync(NuctiusNow.Components.User_Related.User usuarioNuevo, string passwordPlana)
     {
         // 1. Validation Checks: Check for unique email or username existence
         if (await _context.Users.AnyAsync(u => u.Email == usuarioNuevo.Email))
@@ -158,13 +159,13 @@ public class AuthService
     /// <summary>
     /// Authenticates user using username or email and verifies account status.
     /// </summary>
-    public async Task<(User? user, string message)> LoginAsync(string usernameOrEmail, string passwordPlana)
+    public async Task<(NuctiusNow.Components.User_Related.User? user, string message)> LoginAsync(string usernameOrEmail, string passwordPlana)
     {
         // Attempt to find user by username OR email
         var user = await _context.Users.FirstOrDefaultAsync(u => u.Username == usernameOrEmail || u.Email == usernameOrEmail);
 
         if (user == null)
-            return (null, "Usuario o contraseña incorrectos.");
+            return ((NuctiusNow.Components.User_Related.User?)null, "Usuario o contraseña incorrectos.");
 
         // Check if banned status is active
         if (user.IsBanned)
@@ -172,7 +173,7 @@ public class AuthService
             
         // Verify password
         if (!BCrypt.Net.BCrypt.Verify(passwordPlana, user.Password))
-            return (null, "Usuario o contraseña incorrectos.");
+            return ((NuctiusNow.Components.User_Related.User?)null, "Usuario o contraseña incorrectos.");
 
         // Success: Return the found user object
         return (user, "Login exitoso.");
@@ -181,9 +182,9 @@ public class AuthService
     /// <summary>
     /// Finds a user by primary key.
     /// </summary>
-    public async Task<User?> GetUserByIdAsync(int id)
+    public async Task<NuctiusNow.Components.User_Related.User?> GetUserByIdAsync(int id)
     {
-        return await _context.Users.FindAsync(id);
+        return await _context.Users.FindAsync(id) as NuctiusNow.Components.User_Related.User;
     }
 
     /// <summary>
@@ -262,9 +263,9 @@ public class AuthService
         
         if (!string.IsNullOrEmpty(newLanguage))
         {
-            if (int.TryParse(newLanguage, out int newLangId) && userToUpdate.Language != newLangId)
+            if (int.TryParse(newLanguage, out int newLangId) && userToUpdate.Language != (newLangId == 1 ? "English" : "Spanish"))
             {
-                userToUpdate.Language = newLangId;
+                userToUpdate.Language = newLangId == 1 ? "English" : "Spanish";
             }
         }
 
@@ -310,9 +311,9 @@ public class AuthService
     /// <summary>
     /// Retrieves all registered users from the database for administrative views.
     /// </summary>
-    public async Task<List<User>> ObtenerTodosLosUsuariosAsync()
+    public async Task<List<NuctiusNow.Components.User_Related.User>> ObtenerTodosLosUsuariosAsync()
     {
         // Returns all users, including those potentially banned or needing review.
-        return await _context.Users.ToListAsync();
+        return await _context.Users.ToListAsync() as List<NuctiusNow.Components.User_Related.User>;
     }
 }

@@ -39,6 +39,9 @@ builder.Services.AddScoped<ILocalLlmService, LocalLlmService>();
 builder.Services.AddScoped<NewsIngestService>();
 // Servicio para cargar detalles de noticias y comentarios
 builder.Services.AddScoped<NewsDetailService>();
+
+builder.Services.AddSingleton<ArticleExtractionService>();
+
 //Servicio de busqueda
 builder.Services.AddScoped<InternetSearchService>();
 // Register HttpClient factory for server-side HTTP calls (reCAPTCHA verification)

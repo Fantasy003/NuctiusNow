@@ -1,6 +1,7 @@
 @page "/"
 
 @using System.Collections.Concurrent
+@using Microsoft.EntityFrameworkCore
 @using NuctiusNow.Data
 @using NuctiusNow.Services
 @using NuctiusNow.Components.User_Related
@@ -12,50 +13,108 @@
 <PageTitle>NuctiusNow - Home</PageTitle>
 
 <div class="home-container">
-    <header class="home-header">
-        <h1 class="home-heading">Latest Personalized News</h1>
-        <p class="home-subheading">Selected by our AI engine based on your interests.</p>
-    </header>
+    <section class="home-hero" aria-labelledby="home-title">
+        <div class="home-hero-copy">
+            <span class="section-kicker">NUCTIUSNOW / PERSONALIZED DESK</span>
+            <h1 id="home-title" class="home-heading">Latest Personalized News</h1>
+            <p class="home-subheading">
+                A live selection shaped by your preferences and the stories you interact with.
+            </p>
+        </div>
 
-    <div class="categories-grid">
+        <div class="home-hero-status">
+            <span class="status-dot"></span>
+            <span>@(sessionService.IsAuthenticated ? "AI feed active" : "Public feed")</span>
+        </div>
+    </section>
+
+    <main class="categories-grid" aria-label="Personalized news categories">
         @foreach (var cat in Categories)
         {
             var isLoading = _isLoading.GetValueOrDefault(cat.Name, false);
             var hottestNews = _hottestNewsByCategory.GetValueOrDefault(cat.Name);
+            var hasImage = HasNewsImage(hottestNews);
 
-            <div class="category-card-link" role="button" tabindex="0"
-                 @onclick="async () => await OpenCategoryNews(cat.Name, hottestNews)"
-                 @onkeydown="@(async e => { if (e.Key == "Enter") await OpenCategoryNews(cat.Name, hottestNews); })">
-                <div class="category-card" style="background-image: url('@cat.BackupImageUrl');">
-                    <div class="card-overlay"></div>
-                    <div class="card-content">
-                        @if (isLoading)
+            <button class="category-card-link @GetCategoryToneClass(cat.Name)"
+                    type="button"
+                    @onclick="async () => await OpenCategoryNews(cat.Name, hottestNews)"
+                    disabled="@(isLoading || hottestNews == null)"
+                    aria-label="Open @cat.Name news">
+                <article class="category-card">
+                    <div class="category-card-media">
+                        @if (hasImage && hottestNews != null)
                         {
-                            <span class="category-tag-pill">@cat.Name</span>
-                            <h2 class="category-title">Loading...</h2>
-                        }
-                        else if (hottestNews != null)
-                        {
-                            <span class="category-tag-pill">@cat.Name</span>
-                            <h2 class="category-title">@(hottestNews.DetailNews?.Keyword ?? "No Title Available")</h2>
-                            <span class="news-meta">@hottestNews.CapturedDate.ToString("dd MMM yyyy")</span>
-
-                            @if (_sourceByCategory.TryGetValue(cat.Name, out var source) && source == NewsSelectionSource.DatabaseRandomFallback)
-                            {
-                                <span class="news-status">Showing an older article</span>
-                            }
+                            <img class="category-card-image"
+                                 src="@hottestNews.DetailNews!.ImageUrl"
+                                 alt="@(hottestNews.DetailNews?.Keyword ?? cat.Name)"
+                                 loading="lazy" />
                         }
                         else
                         {
-                            <span class="category-tag-pill">@cat.Name</span>
-                            <h2 class="category-title">@cat.Name.ToUpper()</h2>
-                            <span class="news-meta">No recent news</span>
+                            <div class="category-card-placeholder" aria-hidden="true">
+                                <span>@GetCategoryInitial(cat.Name)</span>
+                            </div>
+                        }
+
+                        <div class="category-card-shade"></div>
+                        <span class="category-tag-pill">@cat.Name</span>
+                        <span class="category-card-index">@GetCategoryIndex(cat.Name)</span>
+                    </div>
+
+                    <div class="category-card-content">
+                        @if (isLoading)
+                        {
+                            <div class="card-skeleton-line card-skeleton-title"></div>
+                            <div class="card-skeleton-line"></div>
+                            <div class="card-skeleton-line card-skeleton-short"></div>
+                            <span class="news-meta">AI is finding a fresh story…</span>
+                        }
+                        else if (hottestNews != null)
+                        {
+                            <div class="category-card-topline">
+                                <span class="ai-badge">AI PICK</span>
+                                @if (_sourceByCategory.TryGetValue(cat.Name, out var source) &&
+                                     source == NewsSelectionSource.DatabaseRandomFallback)
+                                {
+                                    <span class="news-status">Archive fallback</span>
+                                }
+                            </div>
+
+                            <h2 class="category-title">
+                                @(hottestNews.DetailNews?.Keyword ?? "Untitled story")
+                            </h2>
+
+                            <p class="news-summary">
+                                @(hottestNews.DetailNews?.AiSummary
+                                    ?? hottestNews.DetailNews?.Context
+                                    ?? "No summary available.")
+                            </p>
+
+                            <div class="news-meta-row">
+                                <span class="news-meta">
+                                    @((hottestNews.DetailNews?.NewsDate ?? hottestNews.CapturedDate).ToLocalTime().ToString("dd MMM yyyy"))
+                                </span>
+                                <span class="read-story">Read story <span aria-hidden="true">→</span></span>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="category-card-topline">
+                                <span class="ai-badge muted">NO RESULT</span>
+                            </div>
+                            <h2 class="category-title">No recent news</h2>
+                            <p class="news-summary">We couldn't find an article for this category right now.</p>
                         }
                     </div>
-                </div>
-            </div>
+                </article>
+            </button>
         }
-    </div>
+    </main>
+
+    <footer class="home-footer">
+        <span>Recommendations refresh when you return to this page.</span>
+        <span class="home-footer-line"></span>
+    </footer>
 </div>
 
 @code {
@@ -69,19 +128,19 @@
         await sessionService.InitializeAsync();
 
         var mapping = InternetSearchService.GetCategoryMapping();
-        Categories = mapping.Select(m => new Category(m.Category, $"https://source.unsplash.com/random/500x500/?{m.Category}")).ToList();
+        Categories = mapping
+            .Select(m => new Category(m.Category))
+            .ToList();
 
-        var categoryNames = Categories.Select(x => x.Name).ToList();
-
-        foreach (var category in categoryNames)
+        foreach (var category in Categories)
         {
-            _isLoading[category] = true;
-            _hottestNewsByCategory[category] = null;
-            _sourceByCategory[category] = NewsSelectionSource.None;
+            _isLoading[category.Name] = true;
+            _hottestNewsByCategory[category.Name] = null;
+            _sourceByCategory[category.Name] = NewsSelectionSource.None;
         }
 
-        // Fire parallel background loading using factory-isolated DB contexts
-        _ = LoadAllCategoriesAsync(categoryNames);
+        // Every entry/reload asks the AI for a fresh article first.
+        _ = LoadAllCategoriesAsync(Categories.Select(x => x.Name).ToList());
     }
 
     private async Task LoadAllCategoriesAsync(IReadOnlyCollection<string> categories)
@@ -98,14 +157,25 @@
             using var timeoutCts = new CancellationTokenSource(TimeSpan.FromMinutes(3));
             var userId = sessionService.IsAuthenticated ? sessionService.UserId : null;
 
-            var result = await CategoryNewsService.GetNewsForCategoryAsync(category, userId, timeoutCts.Token);
+            var result = await CategoryNewsService.GetNewsForCategoryAsync(
+                category,
+                userId,
+                timeoutCts.Token,
+                forceAiSearchFirst: true);
 
             _hottestNewsByCategory[category] = result.News;
             _sourceByCategory[category] = result.Source;
 
-            if (result.AiFailed)
+            if (result.News != null)
             {
-                Console.WriteLine($"AI failed for {category}. Source: {result.Source}");
+                var imageUrl = await RecommendationEngine.EnsureNewsImageAsync(
+                    result.News.IdNews,
+                    CancellationToken.None);
+
+                if (!string.IsNullOrWhiteSpace(imageUrl) && result.News.DetailNews != null)
+                {
+                    result.News.DetailNews.ImageUrl = imageUrl;
+                }
             }
         }
         catch (Exception ex)
@@ -135,5 +205,20 @@
         Navigation.NavigateTo($"/news-detail/{news.IdNews}");
     }
 
-    public record Category(string Name, string BackupImageUrl);
+    private static bool HasNewsImage(News? news) =>
+        !string.IsNullOrWhiteSpace(news?.DetailNews?.ImageUrl);
+
+    private static string GetCategoryInitial(string category) =>
+        string.IsNullOrWhiteSpace(category) ? "N" : category.Trim()[0].ToString().ToUpperInvariant();
+
+    private static string GetCategoryIndex(string category) =>
+        ((uint)category.GetHashCode() % 100).ToString("00").Substring(0, 2);
+
+    private static string GetCategoryToneClass(string category)
+    {
+        var value = (int)(uint)category.GetHashCode() % 5;
+        return $"tone-{value + 1}";
+    }
+
+    public record Category(string Name);
 }

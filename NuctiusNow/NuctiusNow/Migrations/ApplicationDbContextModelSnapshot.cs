@@ -35,6 +35,12 @@ namespace NuctiusNow.Migrations
                         .HasColumnType("text")
                         .HasColumnName("ai_summary");
 
+                    b.Property<string>("BodySource")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("body_source");
+
                     b.Property<string>("Context")
                         .HasColumnType("text")
                         .HasColumnName("context");
@@ -42,6 +48,10 @@ namespace NuctiusNow.Migrations
                     b.Property<string>("FullBodyText")
                         .HasColumnType("text")
                         .HasColumnName("full_body_text");
+
+                    b.Property<string>("ImageUrl")
+                        .HasColumnType("text")
+                        .HasColumnName("image_url");
 
                     b.Property<string>("Keyword")
                         .HasMaxLength(255)
@@ -105,7 +115,8 @@ namespace NuctiusNow.Migrations
 
                     b.HasKey("IdNews");
 
-                    b.HasIndex("IdDetailNews");
+                    b.HasIndex("IdDetailNews")
+                        .IsUnique();
 
                     b.HasIndex("IdTag");
 
@@ -203,6 +214,61 @@ namespace NuctiusNow.Migrations
                     b.ToTable("tags");
                 });
 
+            modelBuilder.Entity("NuctiusNow.Components.User_Related.User", b =>
+                {
+                    b.Property<int>("IdUser")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasColumnName("id_user");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("IdUser"));
+
+                    b.Property<DateTime>("Birthday")
+                        .HasColumnType("timestamp")
+                        .HasColumnName("birthday");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("email");
+
+                    b.Property<bool>("IsBanned")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_banned");
+
+                    b.Property<bool>("IsPremium")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_premium");
+
+                    b.Property<string>("Language")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("language");
+
+                    b.Property<string>("Password")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("password");
+
+                    b.Property<string>("PasswordHash")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("password_hash");
+
+                    b.Property<string>("Username")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("username");
+
+                    b.HasKey("IdUser");
+
+                    b.ToTable("users");
+                });
+
             modelBuilder.Entity("NuctiusNow.Components.User_Related.UserNews", b =>
                 {
                     b.Property<int>("IdUserNews")
@@ -267,68 +333,42 @@ namespace NuctiusNow.Migrations
                     b.ToTable("user_preference");
                 });
 
-            modelBuilder.Entity("User", b =>
+            modelBuilder.Entity("NuctiusNow.Components.User_Related.UserPreferenceTag", b =>
                 {
-                    b.Property<int>("IdUser")
+                    b.Property<int>("IdUserPreferenceTag")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("integer")
-                        .HasColumnName("id_user");
+                        .HasColumnName("id_user_preference_tag");
 
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("IdUser"));
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("IdUserPreferenceTag"));
 
-                    b.Property<DateTime?>("Birthday")
-                        .IsConcurrencyToken()
-                        .ValueGeneratedOnAddOrUpdate()
-                        .HasColumnType("timestamp")
-                        .HasColumnName("birthday");
-
-                    b.Property<string>("Email")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("email");
-
-                    b.Property<bool>("IsBanned")
-                        .HasColumnType("boolean")
-                        .HasColumnName("is_banned");
-
-                    b.Property<bool>("IsPremium")
-                        .HasColumnType("boolean")
-                        .HasColumnName("is_premium");
-
-                    b.Property<int>("Language")
+                    b.Property<int>("IdTag")
                         .HasColumnType("integer")
-                        .HasColumnName("language");
+                        .HasColumnName("id_tag");
 
-                    b.Property<string>("Password")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("password");
+                    b.Property<int>("IdUserPreference")
+                        .HasColumnType("integer")
+                        .HasColumnName("id_user_preference");
 
-                    b.Property<string>("Role")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("role");
+                    b.HasKey("IdUserPreferenceTag");
 
-                    b.Property<string>("Username")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("username");
+                    b.HasIndex("IdTag");
 
-                    b.HasKey("IdUser");
+                    b.HasIndex("IdUserPreference");
 
-                    b.ToTable("users");
+                    b.ToTable("user_preference_tags");
                 });
 
             modelBuilder.Entity("NuctiusNow.Components.User_Related.News", b =>
                 {
                     b.HasOne("NuctiusNow.Components.User_Related.DetailNews", "DetailNews")
-                        .WithMany()
-                        .HasForeignKey("IdDetailNews")
+                        .WithOne("News")
+                        .HasForeignKey("NuctiusNow.Components.User_Related.News", "IdDetailNews")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.HasOne("NuctiusNow.Components.User_Related.Tag", "Tag")
-                        .WithMany()
+                        .WithMany("News")
                         .HasForeignKey("IdTag")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
@@ -346,7 +386,7 @@ namespace NuctiusNow.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("User", "User")
+                    b.HasOne("NuctiusNow.Components.User_Related.User", "User")
                         .WithMany()
                         .HasForeignKey("IdUser")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -360,7 +400,7 @@ namespace NuctiusNow.Migrations
             modelBuilder.Entity("NuctiusNow.Components.User_Related.Preference", b =>
                 {
                     b.HasOne("NuctiusNow.Components.User_Related.Tag", "Tag")
-                        .WithMany()
+                        .WithMany("Preferences")
                         .HasForeignKey("IdTag")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
@@ -376,8 +416,8 @@ namespace NuctiusNow.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("User", "User")
-                        .WithMany()
+                    b.HasOne("NuctiusNow.Components.User_Related.User", "User")
+                        .WithMany("UserNews")
                         .HasForeignKey("IdUser")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
@@ -390,13 +430,13 @@ namespace NuctiusNow.Migrations
             modelBuilder.Entity("NuctiusNow.Components.User_Related.UserPreference", b =>
                 {
                     b.HasOne("NuctiusNow.Components.User_Related.Preference", "Preference")
-                        .WithMany()
+                        .WithMany("UserPreferences")
                         .HasForeignKey("IdPreference")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("User", "User")
-                        .WithMany()
+                    b.HasOne("NuctiusNow.Components.User_Related.User", "User")
+                        .WithMany("UserPreferences")
                         .HasForeignKey("IdUser")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
@@ -404,6 +444,56 @@ namespace NuctiusNow.Migrations
                     b.Navigation("Preference");
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("NuctiusNow.Components.User_Related.UserPreferenceTag", b =>
+                {
+                    b.HasOne("NuctiusNow.Components.User_Related.Tag", "Tag")
+                        .WithMany("UserPreferenceTags")
+                        .HasForeignKey("IdTag")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("NuctiusNow.Components.User_Related.UserPreference", "UserPreference")
+                        .WithMany("UserPreferenceTags")
+                        .HasForeignKey("IdUserPreference")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Tag");
+
+                    b.Navigation("UserPreference");
+                });
+
+            modelBuilder.Entity("NuctiusNow.Components.User_Related.DetailNews", b =>
+                {
+                    b.Navigation("News");
+                });
+
+            modelBuilder.Entity("NuctiusNow.Components.User_Related.Preference", b =>
+                {
+                    b.Navigation("UserPreferences");
+                });
+
+            modelBuilder.Entity("NuctiusNow.Components.User_Related.Tag", b =>
+                {
+                    b.Navigation("News");
+
+                    b.Navigation("Preferences");
+
+                    b.Navigation("UserPreferenceTags");
+                });
+
+            modelBuilder.Entity("NuctiusNow.Components.User_Related.User", b =>
+                {
+                    b.Navigation("UserNews");
+
+                    b.Navigation("UserPreferences");
+                });
+
+            modelBuilder.Entity("NuctiusNow.Components.User_Related.UserPreference", b =>
+                {
+                    b.Navigation("UserPreferenceTags");
                 });
 #pragma warning restore 612, 618
         }
