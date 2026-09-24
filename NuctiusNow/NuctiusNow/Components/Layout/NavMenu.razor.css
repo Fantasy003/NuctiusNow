@@ -1,3 +1,4 @@
+File type: .css
 /* ============================================================
    TOP NAVIGATION BAR — Mobile-First
    ============================================================ */
@@ -37,7 +38,7 @@
     z-index: 200;
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
-    background-color: rgba(15, 15, 15, 0.92);
+    background-color: color-mix(in srgb, var(--bg-page) 92%, transparent);
     display: none; /* Hidden on mobile/tablet by default */
 }
 
@@ -81,7 +82,7 @@
     display: none; /* hidden on mobile */
     gap: 0.25rem;
     align-items: center;
-    background: rgba(18, 18, 18, 0.85); /* Dark transparent */
+    background: color-mix(in srgb, var(--bg-card) 85%, transparent);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
     border: 1px solid var(--border-light);
@@ -91,7 +92,7 @@
 }
 
 ::deep .theme-light .nav-links {
-    background: rgba(255, 255, 255, 0.85);
+    background: color-mix(in srgb, var(--bg-card) 88%, transparent);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
@@ -233,3 +234,4 @@
         margin-left: auto;
     }
 }
+

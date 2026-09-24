@@ -12,13 +12,16 @@ namespace NuctiusNow.Components.User_Related;
 
 public class AuthService
 {
-    private readonly ApplicationDbContext _context;
+    private readonly IDbContextFactory<ApplicationDbContext> _dbFactory;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IConfiguration _configuration;
 
-    public AuthService(ApplicationDbContext context, IHttpClientFactory httpClientFactory, IConfiguration configuration)
+    public AuthService(
+        IDbContextFactory<ApplicationDbContext> dbFactory,
+        IHttpClientFactory httpClientFactory,
+        IConfiguration configuration)
     {
-        _context = context;
+        _dbFactory = dbFactory;
         _httpClientFactory = httpClientFactory;
         _configuration = configuration;
     }
@@ -26,12 +29,17 @@ public class AuthService
     /// <summary>
     /// Registers a new user by hashing the password and saving to the database.
     /// </summary>
-    public async Task<(bool success, string message)> RegistrarAsync(NuctiusNow.Components.User_Related.User usuarioNuevo, string passwordPlana)
+    public async Task<(bool success, string message)> RegistrarAsync(
+        NuctiusNow.Components.User_Related.User usuarioNuevo,
+        string passwordPlana)
     {
+        await using var context = await _dbFactory.CreateDbContextAsync();
+
         // 1. Validation Checks: Check for unique email or username existence
-        if (await _context.Users.AnyAsync(u => u.Email == usuarioNuevo.Email))
+        if (await context.Users.AnyAsync(u => u.Email == usuarioNuevo.Email))
             return (false, "El email ya está registrado.");
-        if (await _context.Users.AnyAsync(u => u.Username == usuarioNuevo.Username))
+
+        if (await context.Users.AnyAsync(u => u.Username == usuarioNuevo.Username))
             return (false, "El nombre de usuario ya existe.");
 
         // 2. Hash password and set initial state
@@ -40,14 +48,13 @@ public class AuthService
 
         try
         {
-            _context.Users.Add(usuarioNuevo);
-            await _context.SaveChangesAsync();
+            context.Users.Add(usuarioNuevo);
+            await context.SaveChangesAsync();
             return (true, "Usuario registrado con éxito.");
         }
         catch (Exception ex)
         {
-            // In a real application, use a proper logging framework instead of Console.WriteLine
-            Console.WriteLine($"DB Error during registration: {ex.Message}"); 
+            Console.WriteLine($"DB Error during registration: {ex.Message}");
             return (false, $"Error desconocido al registrar el usuario: {ex.Message}");
         }
     }
@@ -75,19 +82,27 @@ public class AuthService
         try
         {
             var secret = _configuration["Recaptcha:Secret"];
-            if (string.IsNullOrEmpty(secret) || string.IsNullOrEmpty(token)) return false;
+            if (string.IsNullOrEmpty(secret) || string.IsNullOrEmpty(token))
+                return false;
 
             var client = _httpClientFactory.CreateClient();
+
             var values = new Dictionary<string, string>
             {
                 { "secret", secret },
                 { "response", token }
             };
 
-            var response = await client.PostAsync("https://www.google.com/recaptcha/api/siteverify", new FormUrlEncodedContent(values));
-            if (!response.IsSuccessStatusCode) return false;
+            var response = await client.PostAsync(
+                "https://www.google.com/recaptcha/api/siteverify",
+                new FormUrlEncodedContent(values));
 
-            var payload = await response.Content.ReadFromJsonAsync<RecaptchaVerifyResponse>();
+            if (!response.IsSuccessStatusCode)
+                return false;
+
+            var payload = await response.Content
+                .ReadFromJsonAsync<RecaptchaVerifyResponse>();
+
             return payload?.Success ?? false;
         }
         catch (Exception ex)
@@ -100,56 +115,97 @@ public class AuthService
     /// <summary>
     /// Registers a new user after verifying reCAPTCHA token. Returns created user id on success.
     /// </summary>
-    public async Task<(bool success, string message, int? userId)> RegistrarConCaptchaAsync(User usuarioNuevo, string passwordPlana, string recaptchaToken)
+    public async Task<(bool success, string message, int? userId)> RegistrarConCaptchaAsync(
+        User usuarioNuevo,
+        string passwordPlana,
+        string recaptchaToken)
     {
         var recaptchaOk = await VerifyRecaptchaAsync(recaptchaToken);
-        if (!recaptchaOk) return (false, "Captcha verification failed.", null);
+        if (!recaptchaOk)
+            return (false, "Captcha verification failed.", null);
 
         var (success, message) = await RegistrarAsync(usuarioNuevo, passwordPlana);
-        if (!success) return (false, message, null);
+        if (!success)
+            return (false, message, null);
+
+        await using var context = await _dbFactory.CreateDbContextAsync();
 
         // After RegistrarAsync we expect the user to be saved and have an Id
-        var savedUser = await _context.Users.FirstOrDefaultAsync(u => u.Email == usuarioNuevo.Email || u.Username == usuarioNuevo.Username);
-        if (savedUser == null) return (false, "Failed to retrieve created user.", null);
+        var savedUser = await context.Users.FirstOrDefaultAsync(
+            u => u.Email == usuarioNuevo.Email ||
+                 u.Username == usuarioNuevo.Username);
+
+        if (savedUser == null)
+            return (false, "Failed to retrieve created user.", null);
 
         return (true, "Usuario registrado con éxito.", savedUser.IdUser);
     }
 
     /// <summary>
-    /// Saves a list of textual preferences for a user by creating Tags, Preferences and UserPreference links as needed.
+    /// Saves a list of textual preferences for a user by creating Tags,
+    /// Preferences and UserPreference links as needed.
     /// </summary>
-    public async Task<(bool success, string message)> SavePreferencesForUserAsync(int userId, List<string> preferences)
+    public async Task<(bool success, string message)> SavePreferencesForUserAsync(
+        int userId,
+        List<string> preferences)
     {
-        var user = await _context.Users.FindAsync(userId);
-        if (user == null) return (false, "User not found.");
+        await using var context = await _dbFactory.CreateDbContextAsync();
 
-        foreach (var prefName in preferences.Select(p => p?.Trim()).Where(p => !string.IsNullOrEmpty(p)).Select(p => p!))
+        var user = await context.Users.FindAsync(userId);
+        if (user == null)
+            return (false, "User not found.");
+
+        foreach (var prefName in preferences
+            .Select(p => p?.Trim())
+            .Where(p => !string.IsNullOrEmpty(p))
+            .Select(p => p!))
         {
             // Find or create tag
-            var tag = await _context.Tags.FirstOrDefaultAsync(t => t.Name == prefName);
+            var tag = await context.Tags
+                .FirstOrDefaultAsync(t => t.Name == prefName);
+
             if (tag == null)
             {
                 tag = new Tag { Name = prefName };
-                _context.Tags.Add(tag);
-                await _context.SaveChangesAsync();
+                context.Tags.Add(tag);
+                await context.SaveChangesAsync();
             }
 
             // Find or create preference for that tag
-            var preference = await _context.Preferences.FirstOrDefaultAsync(p => p.IdTag == tag.IdTag);
+            var preference = await context.Preferences
+                .FirstOrDefaultAsync(p => p.IdTag == tag.IdTag);
+
             if (preference == null)
             {
-                preference = new Preference { IdTag = tag.IdTag, PreferenceName = prefName, Weight = 1, IsSfw = true };
-                _context.Preferences.Add(preference);
-                await _context.SaveChangesAsync();
+                preference = new Preference
+                {
+                    IdTag = tag.IdTag,
+                    PreferenceName = prefName,
+                    Weight = 1,
+                    IsSfw = true
+                };
+
+                context.Preferences.Add(preference);
+                await context.SaveChangesAsync();
             }
 
             // Link to user if not already linked
-            var existing = await _context.UserPreferences.FirstOrDefaultAsync(up => up.IdUser == userId && up.IdPreference == preference.IdPreference);
+            var existing = await context.UserPreferences
+                .FirstOrDefaultAsync(up =>
+                    up.IdUser == userId &&
+                    up.IdPreference == preference.IdPreference);
+
             if (existing == null)
             {
-                var userPref = new UserPreference { IdUser = userId, IdPreference = preference.IdPreference };
-                _context.UserPreferences.Add(userPref);
-                await _context.SaveChangesAsync();
+                var userPref = new UserPreference
+                {
+                    IdUser = userId,
+                    IdPreference = preference.IdPreference,
+                    Weight = 1
+                };
+
+                context.UserPreferences.Add(userPref);
+                await context.SaveChangesAsync();
             }
         }
 
@@ -159,21 +215,35 @@ public class AuthService
     /// <summary>
     /// Authenticates user using username or email and verifies account status.
     /// </summary>
-    public async Task<(NuctiusNow.Components.User_Related.User? user, string message)> LoginAsync(string usernameOrEmail, string passwordPlana)
+    public async Task<(NuctiusNow.Components.User_Related.User? user, string message)> LoginAsync(
+        string usernameOrEmail,
+        string passwordPlana)
     {
+        await using var context = await _dbFactory.CreateDbContextAsync();
+
         // Attempt to find user by username OR email
-        var user = await _context.Users.FirstOrDefaultAsync(u => u.Username == usernameOrEmail || u.Email == usernameOrEmail);
+        var user = await context.Users.FirstOrDefaultAsync(
+            u => u.Username == usernameOrEmail ||
+                 u.Email == usernameOrEmail);
 
         if (user == null)
-            return ((NuctiusNow.Components.User_Related.User?)null, "Usuario o contraseña incorrectos.");
+        {
+            return (
+                (NuctiusNow.Components.User_Related.User?)null,
+                "Usuario o contraseña incorrectos.");
+        }
 
         // Check if banned status is active
         if (user.IsBanned)
             return (user, "Cuenta suspendida temporalmente.");
-            
+
         // Verify password
         if (!BCrypt.Net.BCrypt.Verify(passwordPlana, user.Password))
-            return ((NuctiusNow.Components.User_Related.User?)null, "Usuario o contraseña incorrectos.");
+        {
+            return (
+                (NuctiusNow.Components.User_Related.User?)null,
+                "Usuario o contraseña incorrectos.");
+        }
 
         // Success: Return the found user object
         return (user, "Login exitoso.");
@@ -184,7 +254,11 @@ public class AuthService
     /// </summary>
     public async Task<NuctiusNow.Components.User_Related.User?> GetUserByIdAsync(int id)
     {
-        return await _context.Users.FindAsync(id) as NuctiusNow.Components.User_Related.User;
+        await using var context = await _dbFactory.CreateDbContextAsync();
+
+        return await context.Users
+            .AsNoTracking()
+            .FirstOrDefaultAsync(u => u.IdUser == id);
     }
 
     /// <summary>
@@ -192,9 +266,12 @@ public class AuthService
     /// </summary>
     public async Task<List<string>> GetUserPreferencesAsync(int userId)
     {
-        return await _context.UserPreferences
+        await using var context = await _dbFactory.CreateDbContextAsync();
+
+        return await context.UserPreferences
             .Where(up => up.IdUser == userId)
-            .Join(_context.Preferences,
+            .Join(
+                context.Preferences,
                 up => up.IdPreference,
                 p => p.IdPreference,
                 (up, p) => p.PreferenceName)
@@ -206,11 +283,17 @@ public class AuthService
     /// <summary>
     /// Replaces the user's preference list in the database.
     /// </summary>
-    public async Task<bool> ReplacePreferencesForUserAsync(int userId, List<string> preferences)
+    public async Task<bool> ReplacePreferencesForUserAsync(
+        int userId,
+        List<string> preferences)
     {
-        var existingPreferences = _context.UserPreferences.Where(up => up.IdUser == userId);
-        _context.UserPreferences.RemoveRange(existingPreferences);
-        await _context.SaveChangesAsync();
+        await using var context = await _dbFactory.CreateDbContextAsync();
+
+        var existingPreferences = context.UserPreferences
+            .Where(up => up.IdUser == userId);
+
+        context.UserPreferences.RemoveRange(existingPreferences);
+        await context.SaveChangesAsync();
 
         foreach (var prefName in preferences
             .Select(p => p?.Trim())
@@ -218,25 +301,42 @@ public class AuthService
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Select(p => p!))
         {
-            var tag = await _context.Tags.FirstOrDefaultAsync(t => t.Name == prefName);
+            var tag = await context.Tags
+                .FirstOrDefaultAsync(t => t.Name == prefName);
+
             if (tag == null)
             {
                 tag = new Tag { Name = prefName };
-                _context.Tags.Add(tag);
-                await _context.SaveChangesAsync();
+                context.Tags.Add(tag);
+                await context.SaveChangesAsync();
             }
 
-            var preference = await _context.Preferences.FirstOrDefaultAsync(p => p.IdTag == tag.IdTag);
+            var preference = await context.Preferences
+                .FirstOrDefaultAsync(p => p.IdTag == tag.IdTag);
+
             if (preference == null)
             {
-                preference = new Preference { IdTag = tag.IdTag, PreferenceName = prefName, Weight = 1, IsSfw = true };
-                _context.Preferences.Add(preference);
-                await _context.SaveChangesAsync();
+                preference = new Preference
+                {
+                    IdTag = tag.IdTag,
+                    PreferenceName = prefName,
+                    Weight = 1,
+                    IsSfw = true
+                };
+
+                context.Preferences.Add(preference);
+                await context.SaveChangesAsync();
             }
 
-            var userPref = new UserPreference { IdUser = userId, IdPreference = preference.IdPreference };
-            _context.UserPreferences.Add(userPref);
-            await _context.SaveChangesAsync();
+            var userPref = new UserPreference
+            {
+                IdUser = userId,
+                IdPreference = preference.IdPreference,
+                Weight = 1
+            };
+
+            context.UserPreferences.Add(userPref);
+            await context.SaveChangesAsync();
         }
 
         return true;
@@ -245,39 +345,62 @@ public class AuthService
     /// <summary>
     /// Updates user profile information for an existing user.
     /// </summary>
-    public async Task<bool> ActualizarPerfilAsync(int idUser, string? newUsername = null, string? newEmail = null, DateTime? newBirthday = null, string? newLanguage = null, string? nuevaPassword = null)
+    public async Task<bool> ActualizarPerfilAsync(
+        int idUser,
+        string? newUsername = null,
+        string? newEmail = null,
+        DateTime? newBirthday = null,
+        string? newLanguage = null,
+        string? nuevaPassword = null)
     {
-        var userToUpdate = await _context.Users.FindAsync(idUser);
+        await using var context = await _dbFactory.CreateDbContextAsync();
 
-        if (userToUpdate == null) return false;
+        var userToUpdate = await context.Users.FindAsync(idUser);
+
+        if (userToUpdate == null)
+            return false;
 
         // Update fields if provided and changed
-        if (!string.IsNullOrEmpty(newUsername) && userToUpdate.Username != newUsername)
+        if (!string.IsNullOrEmpty(newUsername) &&
+            userToUpdate.Username != newUsername)
+        {
             userToUpdate.Username = newUsername;
-        
-        if (!string.IsNullOrEmpty(newEmail) && userToUpdate.Email != newEmail)
-            userToUpdate.Email = newEmail;
+        }
 
-        if (newBirthday.HasValue && userToUpdate.Birthday != newBirthday.Value)
+        if (!string.IsNullOrEmpty(newEmail) &&
+            userToUpdate.Email != newEmail)
+        {
+            userToUpdate.Email = newEmail;
+        }
+
+        if (newBirthday.HasValue &&
+            userToUpdate.Birthday != newBirthday.Value)
+        {
             userToUpdate.Birthday = newBirthday.Value;
-        
+        }
+
         if (!string.IsNullOrEmpty(newLanguage))
         {
-            if (int.TryParse(newLanguage, out int newLangId) && userToUpdate.Language != (newLangId == 1 ? "English" : "Spanish"))
-            {
-                userToUpdate.Language = newLangId == 1 ? "English" : "Spanish";
-            }
+            var normalizedLanguage =
+                newLanguage.Equals("Spanish", StringComparison.OrdinalIgnoreCase) ||
+                newLanguage.Equals("es", StringComparison.OrdinalIgnoreCase) ||
+                newLanguage == "2"
+                    ? "es"
+                    : "en";
+
+            userToUpdate.Language = normalizedLanguage;
         }
 
         if (!string.IsNullOrEmpty(nuevaPassword))
         {
-            userToUpdate.Password = BCrypt.Net.BCrypt.HashPassword(nuevaPassword);
+            userToUpdate.Password =
+                BCrypt.Net.BCrypt.HashPassword(nuevaPassword);
         }
 
         try
         {
-            await _context.SaveChangesAsync();
-            return true; 
+            await context.SaveChangesAsync();
+            return true;
         }
         catch (Exception ex)
         {
@@ -286,19 +409,241 @@ public class AuthService
         }
     }
 
+    public sealed record ProfileUpdateStatus(
+        bool CanUpdate,
+        DateTime? NextAvailableAt,
+        TimeSpan Remaining);
+
+    public sealed record ProfileUpdateResult(
+        bool Success,
+        string Message,
+        DateTime? NextAvailableAt = null);
+
+    /// <summary>
+    /// Returns whether the user may update their profile. The cooldown is persisted
+    /// in PostgreSQL so restarting the application cannot bypass it.
+    /// </summary>
+    public async Task<ProfileUpdateStatus> GetProfileUpdateStatusAsync(int userId)
+    {
+        await using var context = await _dbFactory.CreateDbContextAsync();
+
+        var user = await context.Users
+            .AsNoTracking()
+            .FirstOrDefaultAsync(u => u.IdUser == userId);
+
+        if (user == null)
+            return new ProfileUpdateStatus(false, null, TimeSpan.Zero);
+
+        if (!user.LastProfileUpdateAt.HasValue)
+            return new ProfileUpdateStatus(true, null, TimeSpan.Zero);
+
+        var next = user.LastProfileUpdateAt.Value
+            .ToUniversalTime()
+            .AddHours(3);
+
+        var remaining = next - DateTime.UtcNow;
+
+        return remaining <= TimeSpan.Zero
+            ? new ProfileUpdateStatus(true, null, TimeSpan.Zero)
+            : new ProfileUpdateStatus(false, next, remaining);
+    }
+
+    /// <summary>
+    /// Atomically updates all editable user profile values and preferences.
+    /// A successful save starts a three-hour server-side cooldown.
+    /// </summary>
+    public async Task<ProfileUpdateResult> UpdateProfileAsync(
+        int userId,
+        string username,
+        string email,
+        DateTime birthday,
+        string language,
+        string? newPassword,
+        List<string> preferences)
+    {
+        await using var context = await _dbFactory.CreateDbContextAsync();
+
+        var user = await context.Users
+            .FirstOrDefaultAsync(u => u.IdUser == userId);
+
+        if (user == null)
+            return new ProfileUpdateResult(false, "User not found.");
+
+        var now = DateTime.UtcNow;
+
+        if (user.LastProfileUpdateAt.HasValue)
+        {
+            var next = user.LastProfileUpdateAt.Value
+                .ToUniversalTime()
+                .AddHours(3);
+
+            if (next > now)
+            {
+                return new ProfileUpdateResult(
+                    false,
+                    $"Profile changes are locked until {next.ToLocalTime():dd/MM/yyyy HH:mm}.",
+                    next);
+            }
+        }
+
+        username = username?.Trim() ?? string.Empty;
+        email = email?.Trim() ?? string.Empty;
+
+        if (string.IsNullOrWhiteSpace(username) || username.Length < 3)
+            return new ProfileUpdateResult(
+                false,
+                "Username must contain at least 3 characters.");
+
+        if (string.IsNullOrWhiteSpace(email) || !email.Contains('@'))
+            return new ProfileUpdateResult(
+                false,
+                "Enter a valid email address.");
+
+        if (await context.Users.AnyAsync(
+                u => u.IdUser != userId && u.Username == username))
+        {
+            return new ProfileUpdateResult(
+                false,
+                "The username is already in use.");
+        }
+
+        if (await context.Users.AnyAsync(
+                u => u.IdUser != userId && u.Email == email))
+        {
+            return new ProfileUpdateResult(
+                false,
+                "The email is already in use.");
+        }
+
+        var normalizedLanguage =
+            language.Equals("Spanish", StringComparison.OrdinalIgnoreCase) ||
+            language.Equals("es", StringComparison.OrdinalIgnoreCase)
+                ? "es"
+                : "en";
+
+        user.Username = username;
+        user.Email = email;
+        user.Birthday = birthday.Date;
+        user.Language = normalizedLanguage;
+
+        if (!string.IsNullOrWhiteSpace(newPassword))
+        {
+            user.Password =
+                BCrypt.Net.BCrypt.HashPassword(newPassword);
+        }
+
+        var cleanPreferences = preferences
+            .Select(p => p?.Trim())
+            .Where(p => !string.IsNullOrWhiteSpace(p))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Select(p => p!)
+            .Take(30)
+            .ToList();
+
+        // Preserve the user's learned weight when a preference remains in the profile.
+        // Replacing the links must not erase recommendation history.
+        var existingLinks = await context.UserPreferences
+            .Include(up => up.Preference)
+                .ThenInclude(p => p.Tag)
+            .Where(up => up.IdUser == userId)
+            .ToListAsync();
+
+        var previousWeights = existingLinks
+            .Where(up => up.Preference != null)
+            .GroupBy(
+                up => up.Preference!.Tag?.Name ??
+                      up.Preference!.PreferenceName ??
+                      string.Empty,
+                StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                g => g.Key,
+                g => g.First().Weight,
+                StringComparer.OrdinalIgnoreCase);
+
+        context.UserPreferences.RemoveRange(existingLinks);
+
+        foreach (var prefName in cleanPreferences)
+        {
+            var tag = await context.Tags
+                .FirstOrDefaultAsync(t => t.Name == prefName);
+
+            if (tag == null)
+            {
+                tag = new Tag { Name = prefName };
+                context.Tags.Add(tag);
+            }
+
+            var preference = await context.Preferences
+                .FirstOrDefaultAsync(p => p.IdTag == tag.IdTag);
+
+            if (preference == null)
+            {
+                preference = new Preference
+                {
+                    Tag = tag,
+                    PreferenceName = prefName,
+                    Weight = 1,
+                    IsSfw = true
+                };
+
+                context.Preferences.Add(preference);
+            }
+
+            previousWeights.TryGetValue(
+                prefName,
+                out var previousWeight);
+
+            if (previousWeight == 0)
+                previousWeight = 1;
+
+            context.UserPreferences.Add(new UserPreference
+            {
+                IdUser = userId,
+                User = user,
+                Preference = preference,
+                Weight = previousWeight
+            });
+        }
+
+        user.LastProfileUpdateAt = now;
+
+        try
+        {
+            await context.SaveChangesAsync();
+
+            return new ProfileUpdateResult(
+                true,
+                "Profile updated successfully.");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error updating profile: {ex.Message}");
+
+            return new ProfileUpdateResult(
+                false,
+                "Could not save profile changes.");
+        }
+    }
+
     /// <summary>
     /// Changes the ban status of a user account by administrator action.
     /// </summary>
-    public async Task<bool> CambiarEstadoBanAsync(int idUser, bool banear)
+    public async Task<bool> CambiarEstadoBanAsync(
+        int idUser,
+        bool banear)
     {
-        var user = await _context.Users.FindAsync(idUser);
-        if (user == null) return false;
+        await using var context = await _dbFactory.CreateDbContextAsync();
+
+        var user = await context.Users.FindAsync(idUser);
+
+        if (user == null)
+            return false;
 
         user.IsBanned = banear;
-        
+
         try
         {
-            await _context.SaveChangesAsync();
+            await context.SaveChangesAsync();
             return true;
         }
         catch (Exception ex)
@@ -311,9 +656,14 @@ public class AuthService
     /// <summary>
     /// Retrieves all registered users from the database for administrative views.
     /// </summary>
-    public async Task<List<NuctiusNow.Components.User_Related.User>> ObtenerTodosLosUsuariosAsync()
+    public async Task<List<NuctiusNow.Components.User_Related.User>>
+        ObtenerTodosLosUsuariosAsync()
     {
+        await using var context = await _dbFactory.CreateDbContextAsync();
+
         // Returns all users, including those potentially banned or needing review.
-        return await _context.Users.ToListAsync() as List<NuctiusNow.Components.User_Related.User>;
+        return await context.Users
+            .AsNoTracking()
+            .ToListAsync();
     }
 }

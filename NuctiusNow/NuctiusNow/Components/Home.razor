@@ -18,7 +18,7 @@
             <span class="section-kicker">NUCTIUSNOW / PERSONALIZED DESK</span>
             <h1 id="home-title" class="home-heading">Latest Personalized News</h1>
             <p class="home-subheading">
-                A live selection shaped by your preferences and the stories you interact with.
+                AI searches beyond the category label to discover related people, topics, events and stories.
             </p>
         </div>
 
@@ -166,17 +166,9 @@
             _hottestNewsByCategory[category] = result.News;
             _sourceByCategory[category] = result.Source;
 
-            if (result.News != null)
-            {
-                var imageUrl = await RecommendationEngine.EnsureNewsImageAsync(
-                    result.News.IdNews,
-                    CancellationToken.None);
-
-                if (!string.IsNullOrWhiteSpace(imageUrl) && result.News.DetailNews != null)
-                {
-                    result.News.DetailNews.ImageUrl = imageUrl;
-                }
-            }
+            // Home deliberately avoids a second AI call for image discovery.
+            // The first phase is only category news retrieval; article/image enrichment
+            // remains deferred to the detail page.
         }
         catch (Exception ex)
         {

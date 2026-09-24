@@ -29,6 +29,7 @@
     --text-secondary:   #AAAAAA;
     --text-muted:       #666666;
     --text-inverse:     #0F0F0F;
+    --surface-tint:     rgba(255, 255, 255, .025);
 
     /* Fonts */
     --font-ui:          'Inter', system-ui, -apple-system, sans-serif;
@@ -61,6 +62,7 @@
     --text-secondary: #AAAAAA;
     --text-muted: #666666;
     --accent-color: var(--accent);
+    --surface-tint: rgba(255, 255, 255, .025);
 }
 
 .theme-light {
@@ -72,6 +74,7 @@
     --text-secondary: #555555;
     --text-muted: #999999;
     --accent-color: var(--accent);
+    --surface-tint: rgba(17, 17, 17, .025);
 }
 
 .theme-retro {
@@ -198,4 +201,98 @@ h1:focus {
 }
 @keyframes spin {
     100% { transform: rotate(360deg); }
+}
+/* ── Theme-aware application surfaces ── */
+html.theme-light,
+html.theme-light body {
+    background-color: var(--bg-page);
+    color: var(--text-primary);
+}
+
+html.theme-dark,
+html.theme-dark body,
+html.theme-retro,
+html.theme-retro body,
+html.theme-office,
+html.theme-office body {
+    background-color: var(--bg-page);
+    color: var(--text-primary);
+}
+
+.app-shell {
+    min-height: 100vh;
+    background: var(--bg-page);
+    color: var(--text-primary);
+}
+
+.page-body {
+    min-height: 100vh;
+    background: var(--bg-page);
+    color: var(--text-primary);
+}
+
+.theme-retro {
+    --bg-page: #17111f;
+    --bg-card: #24192f;
+    --bg-card-hover: #30203d;
+    --bg-input: #1f1728;
+    --border: #56326d;
+    --border-light: #73458d;
+    --text-primary: #fff7ff;
+    --text-secondary: #d9b9df;
+    --text-muted: #9d77aa;
+    --accent: #ff4f87;
+    --accent-dark: #db2d68;
+    --accent-glow: rgba(255, 79, 135, .2);
+}
+
+.theme-office {
+    --bg-page: #0e1726;
+    --bg-card: #15243b;
+    --bg-card-hover: #1c3150;
+    --bg-input: #10203a;
+    --border: #294b74;
+    --border-light: #3d6593;
+    --text-primary: #f4f8ff;
+    --text-secondary: #b7c9e2;
+    --text-muted: #7590b2;
+    --accent: #60a5fa;
+    --accent-dark: #3b82f6;
+    --accent-glow: rgba(96, 165, 250, .2);
+}
+
+
+/* ============================================================
+   THEME POLISH — shared application surfaces
+   Login/Register are excluded by MainLayout.
+   ============================================================ */
+.app-shell,
+.page-body,
+.home-container,
+.jfy-page-container,
+.search-page,
+.news-detail-page,
+.settings-page {
+    background-color: var(--bg-page);
+    color: var(--text-primary);
+}
+
+.settings-page input,
+.settings-page select,
+.settings-page textarea,
+.search-input-wrapper,
+.search-page .filter-tag,
+.search-page .search-result-card {
+    color-scheme: dark;
+}
+
+html.theme-light,
+html.theme-light body {
+    color-scheme: light;
+}
+
+html.theme-dark,
+html.theme-retro,
+html.theme-office {
+    color-scheme: dark;
 }

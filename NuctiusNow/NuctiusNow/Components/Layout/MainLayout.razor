@@ -1,9 +1,10 @@
 @inherits LayoutComponentBase
 @inject ThemeState ThemeState
 @inject IJSRuntime JSRuntime
+@inject NavigationManager Navigation
 @implements IDisposable
 
-<div class="theme-@ThemeState.CurrentTheme app-shell">
+<div class="@(ThemeEnabled ? $"theme-{ThemeState.CurrentTheme} app-shell" : "app-shell")">
     <NavMenu />
 
     <main class="page-body">
@@ -12,25 +13,52 @@
 </div>
 
 @code {
+    private bool ThemeEnabled =>
+        !IsExcludedThemeRoute(Navigation.Uri);
+
     protected override void OnInitialized()
     {
         ThemeState.OnChange += StateHasChanged;
+        Navigation.LocationChanged += OnLocationChanged;
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
         {
-            var savedTheme = await JSRuntime.InvokeAsync<string>("localStorage.getItem", "selectedTheme");
-            if (!string.IsNullOrEmpty(savedTheme) && savedTheme != ThemeState.CurrentTheme)
-            {
+            var savedTheme = await JSRuntime.InvokeAsync<string>(
+                "localStorage.getItem",
+                "selectedTheme");
+
+            if (!string.IsNullOrWhiteSpace(savedTheme))
                 ThemeState.SetTheme(savedTheme);
-            }
+
+            await ApplyDocumentThemeAsync();
         }
+    }
+
+    private async void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        await ApplyDocumentThemeAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task ApplyDocumentThemeAsync()
+    {
+        var theme = ThemeEnabled ? ThemeState.CurrentTheme : "dark";
+        await JSRuntime.InvokeVoidAsync("nuctiusTheme.set", theme);
+    }
+
+    private static bool IsExcludedThemeRoute(string uri)
+    {
+        var path = new Uri(uri).AbsolutePath.Trim('/');
+        return path.Equals("login", StringComparison.OrdinalIgnoreCase) ||
+               path.Equals("register", StringComparison.OrdinalIgnoreCase);
     }
 
     public void Dispose()
     {
         ThemeState.OnChange -= StateHasChanged;
+        Navigation.LocationChanged -= OnLocationChanged;
     }
 }

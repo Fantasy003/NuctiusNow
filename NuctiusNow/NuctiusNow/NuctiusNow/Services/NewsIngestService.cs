@@ -19,9 +19,9 @@ public class NewsIngestService
     }
 
     /// <summary>
-    /// Guarda una noticia en la base de datos.
-    /// Si el hyperlink ya existe, actualiza el registro existente.
-    /// También permite almacenar el cuerpo completo y su origen.
+    /// Creates or updates a news record while preserving compatibility with all
+    /// existing callers. Full article text, image and source metadata are optional
+    /// and can be filled later by NewsDetails.
     /// </summary>
     public async Task<News> SaveOrUpdateNewsAsync(
         string hyperlink,
@@ -34,195 +34,95 @@ public class NewsIngestService
         DateTime? newsDate = null,
         string? fullBodyText = null,
         string? bodySource = null,
-        string? imageUrl = null)
+        string? imageUrl = null,
+        string? additionalSourcesJson = null)
     {
-        if (string.IsNullOrWhiteSpace(hyperlink))
-        {
-            throw new ArgumentException(
-                "hyperlink required",
-                nameof(hyperlink));
-        }
+        hyperlink = hyperlink?.Trim() ?? string.Empty;
+        keyword = string.IsNullOrWhiteSpace(keyword) ? "Untitled story" : keyword.Trim();
+        contextText = contextText?.Trim();
 
-        const int maxKeywordLength = 255;
-
-        if (!string.IsNullOrWhiteSpace(keyword) &&
-            keyword.Length > maxKeywordLength)
-        {
-            keyword = keyword[..maxKeywordLength];
-        }
-
-        hyperlink = hyperlink.Trim();
-
-        // ---------------------------------------------------------
-        // Buscar noticia existente
-        // ---------------------------------------------------------
-
-        var existing = await _context.News
+        var news = await _context.News
             .Include(n => n.DetailNews)
-            .FirstOrDefaultAsync(
-                n => n.Hyperlink == hyperlink);
+            .FirstOrDefaultAsync(n => n.Hyperlink == hyperlink);
 
-        if (existing != null)
+        if (news == null)
         {
-            // -----------------------------------------------------
-            // Asegurar DetailNews
-            // -----------------------------------------------------
-
-            if (existing.DetailNews == null)
+            var detail = new DetailNews
             {
-                var detail = new DetailNews
+                Keyword = keyword,
+                Context = contextText,
+                AiSummary = contextText,
+                NewsDate = newsDate ?? DateTime.UtcNow,
+                FullBodyText = fullBodyText,
+                BodySource = string.IsNullOrWhiteSpace(bodySource) ? "Unknown" : bodySource,
+                ImageUrl = imageUrl,
+                AdditionalSourcesJson = additionalSourcesJson
+            };
+
+            _context.DetailNews.Add(detail);
+            await _context.SaveChangesAsync();
+
+            news = new News
+            {
+                IdTag = idTag,
+                IdDetailNews = detail.IdDetailNews,
+                DetailNews = detail,
+                Hyperlink = hyperlink,
+                IsSfw = isSfw,
+                SecureLink = secureLink,
+                IsAi = isAi,
+                CapturedDate = DateTime.UtcNow
+            };
+
+            _context.News.Add(news);
+        }
+        else
+        {
+            news.IdTag = idTag;
+            news.IsSfw = isSfw;
+            news.SecureLink = secureLink;
+            news.IsAi = news.IsAi || isAi;
+
+            if (news.DetailNews == null)
+            {
+                news.DetailNews = new DetailNews
                 {
-                    Context = contextText,
                     Keyword = keyword,
-                    FullBodyText = string.IsNullOrWhiteSpace(fullBodyText)
-                        ? null
-                        : fullBodyText.Trim(),
-                    BodySource = string.IsNullOrWhiteSpace(fullBodyText)
-                        ? "Unknown"
-                        : (bodySource ?? "Original"),
-                    NewsDate = newsDate ?? DateTime.UtcNow
+                    Context = contextText,
+                    AiSummary = contextText,
+                    NewsDate = newsDate ?? DateTime.UtcNow,
+                    BodySource = string.IsNullOrWhiteSpace(bodySource) ? "Unknown" : bodySource
                 };
-
-                _context.DetailNews.Add(detail);
-
-                await _context.SaveChangesAsync();
-
-                existing.IdDetailNews = detail.IdDetailNews;
-                existing.DetailNews = detail;
+                _context.DetailNews.Add(news.DetailNews);
             }
             else
             {
-                // -------------------------------------------------
-                // Actualizar contexto
-                // -------------------------------------------------
+                news.DetailNews.Keyword = keyword;
 
                 if (!string.IsNullOrWhiteSpace(contextText))
                 {
-                    existing.DetailNews.Context = contextText;
+                    news.DetailNews.Context = contextText;
+                    news.DetailNews.AiSummary = contextText;
                 }
-
-                // -------------------------------------------------
-                // Actualizar keyword
-                // -------------------------------------------------
-
-                if (!string.IsNullOrWhiteSpace(keyword))
-                {
-                    existing.DetailNews.Keyword = keyword;
-                }
-
-                // -------------------------------------------------
-                // Actualizar fecha
-                // -------------------------------------------------
 
                 if (newsDate.HasValue)
-                {
-                    existing.DetailNews.NewsDate = newsDate.Value;
-                }
-
-                // -------------------------------------------------
-                // Actualizar cuerpo completo
-                // -------------------------------------------------
+                    news.DetailNews.NewsDate = newsDate.Value;
 
                 if (!string.IsNullOrWhiteSpace(fullBodyText))
-                {
-                    existing.DetailNews.FullBodyText =
-                        fullBodyText.Trim();
+                    news.DetailNews.FullBodyText = fullBodyText;
 
-                    existing.DetailNews.BodySource =
-                        bodySource ?? existing.DetailNews.BodySource;
-                }
+                if (!string.IsNullOrWhiteSpace(bodySource))
+                    news.DetailNews.BodySource = bodySource;
+
                 if (!string.IsNullOrWhiteSpace(imageUrl))
-                {
-                    existing.DetailNews.ImageUrl = imageUrl.Trim();
-                }
-                else if (!string.IsNullOrWhiteSpace(bodySource))
-                {
-                    existing.DetailNews.BodySource = bodySource;
-                }
+                    news.DetailNews.ImageUrl = imageUrl;
+
+                if (!string.IsNullOrWhiteSpace(additionalSourcesJson))
+                    news.DetailNews.AdditionalSourcesJson = additionalSourcesJson;
             }
-
-            // -----------------------------------------------------
-            // Actualizar News
-            // -----------------------------------------------------
-
-            existing.IdTag = idTag;
-            existing.IsSfw = isSfw;
-            existing.SecureLink = secureLink;
-            existing.IsAi = isAi;
-            existing.CapturedDate = DateTime.UtcNow;
-
-            await _context.SaveChangesAsync();
-
-            _logger.LogInformation(
-                "Updated existing News id={NewsId} for hyperlink {Hyperlink}",
-                existing.IdNews,
-                hyperlink);
-
-            return existing;
         }
 
-        // ---------------------------------------------------------
-        // Crear DetailNews nuevo
-        // ---------------------------------------------------------
-
-        var newDetail = new DetailNews
-        {
-            Context = contextText,
-            Keyword = keyword,
-
-            FullBodyText =
-                string.IsNullOrWhiteSpace(fullBodyText)
-                    ? null
-                    : fullBodyText.Trim(),
-
-            BodySource =
-                string.IsNullOrWhiteSpace(fullBodyText)
-                    ? "Unknown"
-                    : (bodySource ?? "Original"),
-
-            ImageUrl =
-                string.IsNullOrWhiteSpace(imageUrl)
-                    ? null
-                    : imageUrl.Trim(),
-
-            NewsDate = newsDate ?? DateTime.UtcNow
-        };
-
-        _context.DetailNews.Add(newDetail);
-
         await _context.SaveChangesAsync();
-
-        // ---------------------------------------------------------
-        // Crear News
-        // ---------------------------------------------------------
-
-        var newNews = new News
-        {
-            Hyperlink = hyperlink,
-            IdTag = idTag,
-            IdDetailNews = newDetail.IdDetailNews,
-
-            IsSfw = isSfw,
-            SecureLink = secureLink,
-            IsAi = isAi,
-
-            CapturedDate = DateTime.UtcNow,
-
-            Likes = 0,
-            Dislikes = 0,
-
-            DetailNews = newDetail
-        };
-
-        _context.News.Add(newNews);
-
-        await _context.SaveChangesAsync();
-
-        _logger.LogInformation(
-            "Created new News id={NewsId} for hyperlink {Hyperlink}",
-            newNews.IdNews,
-            hyperlink);
-
-        return newNews;
+        return news;
     }
 }

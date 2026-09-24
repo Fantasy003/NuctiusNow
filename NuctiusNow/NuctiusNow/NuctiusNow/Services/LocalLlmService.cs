@@ -21,7 +21,7 @@ public interface ILocalLlmService
     Task<double?> ScoreCandidateAsync(string userProfile, string candidateText);
     Task<List<string?>> SummarizeBatchAsync(List<string> texts, int maxTokens = 220);
     Task<List<double?>> BatchScoreAsync(string userProfile, List<string> candidates);
-    Task<List<(string Title, string Url, string Snippet)>> SearchWebAsync(string query, int maxResults = 5);
+    Task<List<(string Title, string Url, string Snippet)>> SearchWebAsync(string query, int maxResults = 5, CancellationToken cancellationToken = default);
     Task<string?> ExtractArticleBodyTextAsync(string articleUrl, CancellationToken cancellationToken = default);
 
     Task<string?> GenerateOriginalArticleAsync(
@@ -31,7 +31,7 @@ public interface ILocalLlmService
         CancellationToken cancellationToken = default);
 
     Task<string?> SearchImageUrlAsync(
-    string query,
+        string query,
     CancellationToken cancellationToken = default);
 }
 
@@ -45,7 +45,9 @@ public class LocalLlmService : ILocalLlmService
     private readonly SemaphoreSlim _semaphore;
     private readonly int _maxConcurrency;
     private readonly int _batchSize;
-    private readonly string? _modelId;
+    private readonly string? _configuredModelHint;
+    private string? _resolvedModelKey;
+    private readonly SemaphoreSlim _modelResolveSemaphore = new(1, 1);
     private readonly JsonSerializerOptions _jsonOptions = new() { PropertyNameCaseInsensitive = true };
     private readonly ILogger<LocalLlmService> _logger;
 
@@ -74,14 +76,14 @@ public class LocalLlmService : ILocalLlmService
         _maxConcurrency = config.GetValue<int?>("LocalLlm:MaxConcurrency") ?? 2;
         _batchSize = config.GetValue<int?>("LocalLlm:BatchSize") ?? 8;
 
-        // Model ID configuration with fallback chain
-        var configuredModel = config.GetValue<string?>("LocalLlm:Model") ??
-                             config.GetValue<string?>("LocalLlm:ModelId");
-        _modelId = string.IsNullOrWhiteSpace(configuredModel)
-            ? "qwen3.5-9b-the-defiant-fable-uncensored-heretic-neo-imatrix-max-mtp"  // Common, reliable default model
-            : configuredModel;
+        // Optional model hint. The service will resolve the exact loaded model key
+        // from LM Studio instead of guessing or triggering JIT loading.
+        _configuredModelHint = config.GetValue<string?>("LocalLlm:Model")
+            ?? config.GetValue<string?>("LocalLlm:ModelId");
 
-        _logger.LogInformation("LocalLlmService initialized with model: {ModelId}", _modelId);
+        _logger.LogInformation(
+            "LocalLlmService initialized. Configured model hint: {ModelHint}",
+            string.IsNullOrWhiteSpace(_configuredModelHint) ? "(auto-detect loaded model)" : _configuredModelHint);
 
         _chatEndpoint = !string.IsNullOrWhiteSpace(chatEndpointFromConfig)
             ? chatEndpointFromConfig!
@@ -104,7 +106,7 @@ public class LocalLlmService : ILocalLlmService
             ["max_tokens"] = maxTokens
         };
 
-        if (!string.IsNullOrWhiteSpace(_modelId)) payload["model"] = _modelId;
+        payload["model"] = await ResolveLoadedModelKeyAsync(CancellationToken.None);
 
         await _semaphore.WaitAsync();
         try
@@ -137,7 +139,7 @@ public class LocalLlmService : ILocalLlmService
             ["max_tokens"] = 10
         };
 
-        if (!string.IsNullOrWhiteSpace(_modelId)) payload["model"] = _modelId;
+        payload["model"] = await ResolveLoadedModelKeyAsync(CancellationToken.None);
 
         await _semaphore.WaitAsync();
         try
@@ -262,88 +264,77 @@ public class LocalLlmService : ILocalLlmService
         return value.Trim('\"', '\'');
     }
 
-    public async Task<List<(string Title, string Url, string Snippet)>> SearchWebAsync(string query, int maxResults = 5)
+    public async Task<List<(string Title, string Url, string Snippet)>> SearchWebAsync(
+        string query,
+        int maxResults = 5,
+        CancellationToken cancellationToken = default)
     {
         var results = new List<(string Title, string Url, string Snippet)>();
-        if (string.IsNullOrWhiteSpace(query)) return results;
+        if (string.IsNullOrWhiteSpace(query))
+            return results;
 
+        maxResults = Math.Clamp(maxResults, 1, 20);
+
+        // The argument is a SEARCH TASK. It may contain a category, topic,
+        // preferences or other context. The model must infer useful search terms
+        // and use the configured SearXNG search plugin.
         var prompt = $"""
 You are NuctiusNow's web-search agent.
 
+Your job is to search the public internet using the available SearXNG search tool.
+The text below is a SEARCH TASK, not necessarily a literal search string.
+Infer concise search terms from the task and look for current, relevant news.
+For category searches, explore indirect but relevant entities and topics instead of
+searching only the category word itself. For example, Politics may include governments,
+leaders, legislation or diplomacy; Technology may include AI, NVIDIA, semiconductors,
+software or cybersecurity; Sports may include soccer, athletics, basketball, etc.
+
 MANDATORY:
-1. Use the available web-search tool exactly once BEFORE answering.
-2. Do NOT answer from model memory.
-3. Search the public internet for the exact query below.
-4. NuctiusNow will read the tool result directly. Do not invent or rewrite search results.
-5. Do not use any other tool.
+1. Use the available search_web tool EXACTLY ONCE before answering.
+2. Search the public internet; do not answer from model memory.
+3. Return the real results supplied by the tool; do not invent URLs or stories.
+4. Prefer distinct articles and publishers when possible.
+5. Do not retry the tool and do not use any other tool.
+6. NuctiusNow parses the tool output directly; do not create or reformat a second JSON response.
 
-Maximum results: {maxResults}
+MAXIMUM RESULTS: {maxResults}
 
-QUERY:
+SEARCH TASK:
 {query}
-
-After the tool returns, no detailed prose is necessary.
 """;
 
         try
         {
             var nativeResponse = await CallWebIntegratedChatAsync(
                 prompt,
-                maxTokens: 1800,
-                cancellationToken: CancellationToken.None);
+                maxTokens: 256,
+                cancellationToken: cancellationToken,
+                includePageFetchTool: false);
 
-            // Fast path: parse the actual search_web tool result returned by LM Studio.
             var searchTool = nativeResponse.ToolCalls
                 .LastOrDefault(tc => tc.Tool.EndsWith("search_web", StringComparison.OrdinalIgnoreCase));
-
-            nativeResponse = await CallWebIntegratedChatAsync(
-            prompt,
-            maxTokens: 1800,
-            cancellationToken: CancellationToken.None);
-
-            _logger.LogInformation(
-            "SearchWebAsync: LM Studio returned {ToolCallCount} tool calls. HasMessage={HasMessage}",
-            nativeResponse.ToolCalls.Count,
-            !string.IsNullOrWhiteSpace(nativeResponse.Message));
-
-            foreach (var toolCall in nativeResponse.ToolCalls)
-            {
-                _logger.LogInformation(
-                    "SearchWebAsync tool: {Tool}, OutputLength={Length}",
-                    toolCall.Tool,
-                    toolCall.Output?.Length ?? 0);
-            }
 
             if (searchTool != null &&
                 TryParseSearchToolOutput(searchTool.Output, maxResults, results))
             {
                 _logger.LogInformation(
-                    "SearchWebAsync: parsed {Count} web results directly from tool_call for '{Query}' using {PluginId}",
+                    "SearchWebAsync: parsed {Count} results directly from search_web for task '{Task}'",
                     results.Count,
-                    query,
-                    _webSearchPluginId);
-
-                return results;
-            }
-
-            // Compatibility fallback: if the tool result was not exposed by the API,
-            // parse the final model message exactly as a normal JSON response.
-            var text = nativeResponse.Message;
-            if (string.IsNullOrWhiteSpace(text))
-            {
-                _logger.LogWarning(
-                    "SearchWebAsync: LM Studio returned no usable tool result or message for query {Query}",
                     query);
                 return results;
             }
 
-            if (TryParseSearchResultsFromText(text, maxResults, results))
+            // Fallback for plugin/API variants that place the usable JSON in the final message.
+            if (!string.IsNullOrWhiteSpace(nativeResponse.Message))
             {
-                _logger.LogInformation(
-                    "SearchWebAsync: parsed {Count} web results from final message for '{Query}' using {PluginId}",
-                    results.Count,
-                    query,
-                    _webSearchPluginId);
+                TryParseSearchResultsFromText(nativeResponse.Message, maxResults, results);
+            }
+
+            if (results.Count == 0)
+            {
+                _logger.LogWarning(
+                    "SearchWebAsync: LM Studio returned no usable tool result or message for search task '{Task}'",
+                    query);
             }
         }
         catch (OperationCanceledException)
@@ -354,7 +345,7 @@ After the tool returns, no detailed prose is necessary.
         {
             _logger.LogError(
                 ex,
-                "SearchWebAsync failed for query '{Query}' using LM Studio native chat + MCP integration {PluginId}",
+                "SearchWebAsync failed for search task '{Task}' using plugin {PluginId}",
                 query,
                 _webSearchPluginId);
         }
@@ -372,10 +363,10 @@ After the tool returns, no detailed prose is necessary.
         var prompt = $$$"""
 You are an image-search assistant for a news website.
 
-MANDATORY: use the available web-search tool before answering.
+MANDATORY: use the available search_web tool EXACTLY ONCE before answering.
 
 Find ONE relevant direct image URL for this news topic:
-{query}
+{{{query}}}
 
 Prefer an editorial photograph or a reusable image from a reputable source.
 Do NOT return an article URL, a search page, Markdown, or explanations.
@@ -392,7 +383,8 @@ If no suitable image is found:
             var nativeResponse = await CallWebIntegratedChatAsync(
                 prompt,
                 maxTokens: 500,
-                cancellationToken);
+                cancellationToken: cancellationToken,
+                includePageFetchTool: false);
 
             var text = nativeResponse.Message;
             if (string.IsNullOrWhiteSpace(text))
@@ -529,8 +521,7 @@ return exactly:
             ["temperature"] = 0.1
         };
 
-        if (!string.IsNullOrWhiteSpace(_modelId))
-            payload["model"] = _modelId;
+        payload["model"] = await ResolveLoadedModelKeyAsync(cancellationToken);
 
         var client = _httpFactory.CreateClient();
         client.Timeout = TimeSpan.FromMinutes(5);
@@ -688,7 +679,8 @@ If the exact article cannot be read, return an empty response.
             var nativeResponse = await CallWebIntegratedChatAsync(
                 prompt,
                 maxTokens: 5000,
-                cancellationToken);
+                cancellationToken: cancellationToken,
+                includePageFetchTool: true);
 
             var extractedText = nativeResponse.Message?.Trim();
 
@@ -783,7 +775,7 @@ PAGE TEXT:
                 ["max_tokens"] = 5000
             };
 
-            if (!string.IsNullOrWhiteSpace(_modelId)) payload["model"] = _modelId;
+            payload["model"] = await ResolveLoadedModelKeyAsync(CancellationToken.None);
 
             var llmClient = _httpFactory.CreateClient();
             llmClient.Timeout = TimeSpan.FromMinutes(5);
@@ -955,68 +947,7 @@ PAGE TEXT:
         public List<NativeToolCallResult> ToolCalls { get; } = new();
     }
 
-    private async Task<NativeChatResponse> CallWebIntegratedChatAsync(
-        string prompt,
-        int maxTokens,
-        CancellationToken cancellationToken)
-    {
-        var payload = new Dictionary<string, object?>
-        {
-            ["model"] = _modelId,
-            ["input"] = prompt,
-            ["integrations"] = new object[]
-            {
-                new
-                {
-                    type = "plugin",
-                    id = _webSearchPluginId,
-                    allowed_tools = new[] { "search_web" }
-                }
-            },
-            ["context_length"] = 125184,
-            ["store"] = false,
-            ["temperature"] = 0,
-            ["max_output_tokens"] = maxTokens
-        };
-
-        var client = _httpFactory.CreateClient();
-        client.Timeout = TimeSpan.FromMinutes(5);
-
-        if (!string.IsNullOrWhiteSpace(_apiToken))
-        {
-            client.DefaultRequestHeaders.Authorization =
-                new AuthenticationHeaderValue("Bearer", _apiToken);
-        }
-
-        await _semaphore.WaitAsync(cancellationToken);
-        try
-        {
-            using var response = await client.PostAsJsonAsync(
-                _chatEndpoint,
-                payload,
-                _jsonOptions,
-                cancellationToken);
-
-            if (!response.IsSuccessStatusCode)
-            {
-                var errorText = await response.Content.ReadAsStringAsync(cancellationToken);
-                _logger.LogWarning(
-                    "LM Studio native web request failed: HTTP {StatusCode}. Response={Response}",
-                    (int)response.StatusCode,
-                    errorText.Length > 600 ? errorText[..600] : errorText);
-
-                return new NativeChatResponse();
-            }
-
-            return await ParseNativeChatResponseAsync(response.Content);
-        }
-        finally
-        {
-            _semaphore.Release();
-        }
-    }
-
-    private async Task<NativeChatResponse> ParseNativeChatResponseAsync(
+private async Task<NativeChatResponse> ParseNativeChatResponseAsync(
     HttpContent content)
     {
         var result = new NativeChatResponse();
@@ -1566,4 +1497,236 @@ PAGE TEXT:
             return null;
         }
     }
+
+    private async Task<NativeChatResponse> CallWebIntegratedChatAsync(
+        string prompt,
+        int maxTokens,
+        CancellationToken cancellationToken,
+        bool includePageFetchTool = false)
+    {
+        var modelKey = await ResolveLoadedModelKeyAsync(cancellationToken);
+
+        var allowedTools = includePageFetchTool &&
+                           _webSearchPluginId.Contains("searxng", StringComparison.OrdinalIgnoreCase)
+            ? new[] { "search_web", "fetch_page_content" }
+            : new[] { "search_web" };
+
+        var payload = new Dictionary<string, object?>
+        {
+            ["model"] = modelKey,
+            ["input"] = prompt,
+            ["integrations"] = new object[]
+            {
+                new
+                {
+                    type = "plugin",
+                    id = _webSearchPluginId,
+                    allowed_tools = allowedTools
+                }
+            },
+            ["store"] = false,
+            ["temperature"] = 0,
+            ["max_output_tokens"] = maxTokens
+        };
+
+        var client = _httpFactory.CreateClient();
+        client.Timeout = TimeSpan.FromMinutes(5);
+
+        if (!string.IsNullOrWhiteSpace(_apiToken))
+        {
+            client.DefaultRequestHeaders.Authorization =
+                new AuthenticationHeaderValue("Bearer", _apiToken);
+        }
+
+        await _semaphore.WaitAsync(cancellationToken);
+        try
+        {
+            using var response = await client.PostAsJsonAsync(
+                _chatEndpoint,
+                payload,
+                _jsonOptions,
+                cancellationToken);
+
+            var errorText = string.Empty;
+            if (!response.IsSuccessStatusCode)
+            {
+                errorText = await response.Content.ReadAsStringAsync(cancellationToken);
+
+                // If LM Studio says the selected key is not loaded, refresh the key once.
+                if (errorText.Contains("model_not_found", StringComparison.OrdinalIgnoreCase) ||
+                    errorText.Contains("No matching loaded model found", StringComparison.OrdinalIgnoreCase))
+                {
+                    _resolvedModelKey = null;
+                    var refreshedKey = await ResolveLoadedModelKeyAsync(cancellationToken, forceRefresh: true);
+
+                    if (!string.Equals(refreshedKey, modelKey, StringComparison.Ordinal))
+                    {
+                        payload["model"] = refreshedKey;
+
+                        using var retry = await client.PostAsJsonAsync(
+                            _chatEndpoint,
+                            payload,
+                            _jsonOptions,
+                            cancellationToken);
+
+                        if (retry.IsSuccessStatusCode)
+                            return await ParseNativeChatResponseAsync(retry.Content);
+
+                        errorText = await retry.Content.ReadAsStringAsync(cancellationToken);
+                    }
+                }
+
+                _logger.LogWarning(
+                    "LM Studio native web request failed: HTTP {StatusCode}. Response={Response}",
+                    (int)response.StatusCode,
+                    errorText.Length > 600 ? errorText[..600] : errorText);
+
+                return new NativeChatResponse();
+            }
+
+            return await ParseNativeChatResponseAsync(response.Content);
+        }
+        finally
+        {
+            _semaphore.Release();
+        }
+    }
+
+    private async Task<string> ResolveLoadedModelKeyAsync(
+        CancellationToken cancellationToken,
+        bool forceRefresh = false)
+    {
+        if (!forceRefresh && !string.IsNullOrWhiteSpace(_resolvedModelKey))
+            return _resolvedModelKey!;
+
+        await _modelResolveSemaphore.WaitAsync(cancellationToken);
+        try
+        {
+            if (!forceRefresh && !string.IsNullOrWhiteSpace(_resolvedModelKey))
+                return _resolvedModelKey!;
+
+            var modelsEndpoint = BuildModelsEndpoint(_chatEndpoint);
+            var client = _httpFactory.CreateClient();
+            client.Timeout = TimeSpan.FromSeconds(15);
+
+            if (!string.IsNullOrWhiteSpace(_apiToken))
+            {
+                client.DefaultRequestHeaders.Authorization =
+                    new AuthenticationHeaderValue("Bearer", _apiToken);
+            }
+
+            using var response = await client.GetAsync(modelsEndpoint, cancellationToken);
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException(
+                    $"LM Studio model list failed with HTTP {(int)response.StatusCode}: {body}");
+            }
+
+            using var doc = JsonDocument.Parse(body);
+            if (!doc.RootElement.TryGetProperty("models", out var models) ||
+                models.ValueKind != JsonValueKind.Array)
+            {
+                throw new InvalidOperationException(
+                    "LM Studio /api/v1/models returned no 'models' array.");
+            }
+
+            var loadedLlmKeys = new List<string>();
+            var matchingCandidates = new List<string>();
+
+            foreach (var model in models.EnumerateArray())
+            {
+                if (!model.TryGetProperty("type", out var typeProp) ||
+                    !string.Equals(typeProp.GetString(), "llm", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                if (!model.TryGetProperty("loaded_instances", out var instances) ||
+                    instances.ValueKind != JsonValueKind.Array ||
+                    instances.GetArrayLength() == 0)
+                    continue;
+
+                if (!model.TryGetProperty("key", out var keyProp) ||
+                    keyProp.ValueKind != JsonValueKind.String)
+                    continue;
+
+                var key = keyProp.GetString();
+                if (string.IsNullOrWhiteSpace(key))
+                    continue;
+
+                loadedLlmKeys.Add(key);
+
+                var displayName = model.TryGetProperty("display_name", out var displayProp) &&
+                                   displayProp.ValueKind == JsonValueKind.String
+                    ? displayProp.GetString()
+                    : null;
+
+                if (!string.IsNullOrWhiteSpace(_configuredModelHint) &&
+                    (key.Equals(_configuredModelHint, StringComparison.OrdinalIgnoreCase) ||
+                     (!string.IsNullOrWhiteSpace(displayName) &&
+                      displayName.Equals(_configuredModelHint, StringComparison.OrdinalIgnoreCase)) ||
+                     key.Contains(_configuredModelHint, StringComparison.OrdinalIgnoreCase) ||
+                     (!string.IsNullOrWhiteSpace(displayName) &&
+                      displayName.Contains(_configuredModelHint, StringComparison.OrdinalIgnoreCase))))
+                {
+                    matchingCandidates.Add(key);
+                }
+            }
+
+            string? selected;
+
+            if (matchingCandidates.Count > 0)
+            {
+                selected = matchingCandidates[0];
+            }
+            else if (!string.IsNullOrWhiteSpace(_configuredModelHint))
+            {
+                var available = loadedLlmKeys.Count == 0
+                    ? "(none)"
+                    : string.Join(", ", loadedLlmKeys);
+
+                throw new InvalidOperationException(
+                    $"LM Studio has no loaded LLM matching '{_configuredModelHint}'. " +
+                    $"Loaded model keys: {available}. Set LocalLlm:Model to the exact model key shown by /api/v1/models, or remove LocalLlm:Model to use auto-detection when exactly one LLM is loaded.");
+            }
+            else if (loadedLlmKeys.Count == 1)
+            {
+                selected = loadedLlmKeys[0];
+            }
+            else if (loadedLlmKeys.Count == 0)
+            {
+                throw new InvalidOperationException(
+                    "LM Studio has no loaded LLM instance. Load the desired model in LM Studio before starting NuctiusNow; JIT loading is intentionally not used.");
+            }
+            else
+            {
+                throw new InvalidOperationException(
+                    "LM Studio has multiple loaded LLMs and LocalLlm:Model does not identify which one NuctiusNow should use. Set LocalLlm:Model to the exact model key.");
+            }
+
+            _resolvedModelKey = selected;
+
+            _logger.LogInformation(
+                "Using already-loaded LM Studio model key: {ModelKey}",
+                _resolvedModelKey);
+
+            return _resolvedModelKey;
+        }
+        finally
+        {
+            _modelResolveSemaphore.Release();
+        }
+    }
+
+    private static string BuildModelsEndpoint(string chatEndpoint)
+    {
+        var uri = new Uri(chatEndpoint, UriKind.Absolute);
+        var builder = new UriBuilder(uri)
+        {
+            Path = "/api/v1/models",
+            Query = string.Empty
+        };
+        return builder.Uri.ToString();
+    }
+
 }

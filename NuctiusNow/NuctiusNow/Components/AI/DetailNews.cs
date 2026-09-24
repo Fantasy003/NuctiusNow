@@ -35,6 +35,9 @@ public class DetailNews
     [MaxLength(32)]
     public string BodySource { get; set; } = "Unknown";
 
+    [Column("additional_sources_json")]
+    public string? AdditionalSourcesJson { get; set; }
+
     // Navigation Properties
     public virtual News? News { get; set; }
 }

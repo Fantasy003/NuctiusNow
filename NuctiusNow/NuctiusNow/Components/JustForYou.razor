@@ -1,15 +1,9 @@
 @page "/just-for-you"
 
-@using System.Collections.Concurrent
-@using Microsoft.EntityFrameworkCore
-@using NuctiusNow.Data
-@using NuctiusNow.Services
 @using NuctiusNow.Components.User_Related
-
+@using NuctiusNow.Services
 @inject UserSessionService sessionService
 @inject RecommendationEngine RecommendationEngine
-@inject CategoryNewsService CategoryNewsService
-@inject IDbContextFactory<ApplicationDbContext> DbFactory
 @inject NavigationManager Navigation
 
 <PageTitle>NuctiusNow - Just For You</PageTitle>
@@ -21,7 +15,7 @@
             <section class="jfy-state-card">
                 <span class="section-kicker">NUCTIUSNOW / FOR YOU</span>
                 <h1>Loading your feed…</h1>
-                <p>We are preparing recommendations from your preferences and recent interactions.</p>
+                <p>We are asking the AI to understand your preferences and the signals you have created across NuctiusNow.</p>
             </section>
         }
         else if (!sessionService.IsAuthenticated)
@@ -29,18 +23,18 @@
             <section class="jfy-state-card">
                 <span class="section-kicker">NUCTIUSNOW / FOR YOU</span>
                 <h1>Sign in to personalize your feed</h1>
-                <p>Log in to let the recommendation engine learn from the topics you follow and the stories you interact with.</p>
+                <p>Log in to let the recommendation engine use your preferences, reading behavior, reactions and comments.</p>
                 <button class="jfy-primary-button" type="button" @onclick='() => Navigation.NavigateTo("/login")'>
                     Log in
                 </button>
             </section>
         }
-        else if (Categories.Count == 0)
+        else if (_preferences.Count == 0)
         {
             <section class="jfy-state-card">
                 <span class="section-kicker">NUCTIUSNOW / FOR YOU</span>
                 <h1>Your feed needs a few interests</h1>
-                <p>Select some topics in your profile and NuctiusNow will start searching for matching stories.</p>
+                <p>Add at least one preference and NuctiusNow will search for stories around it.</p>
                 <button class="jfy-primary-button" type="button" @onclick='() => Navigation.NavigateTo("/user-settings")'>
                     Update preferences
                 </button>
@@ -53,7 +47,7 @@
                     <span class="section-kicker">NUCTIUSNOW / FOR YOU</span>
                     <h1 class="jfy-heading">Just For You</h1>
                     <p class="jfy-subheading">
-                        Fresh stories searched from the web using your preferences and the signals you create while browsing.
+                        One web-searched story for each preference, selected after the AI considers your preferences and overall site interactions.
                     </p>
                 </div>
 
@@ -87,78 +81,81 @@
                     <span class="context-text">Preferences + clicks + likes + comments + reading time</span>
                 </div>
                 <span class="context-dot"></span>
-                <span class="context-status">AI ACTIVE</span>
+                <span class="context-status">AI + SEARXNG</span>
             </div>
 
-            <main class="jfy-grid" aria-label="Personalized news feed">
-                @foreach (var cat in Categories)
-                {
-                    var isLoading = _isLoading.GetValueOrDefault(cat.Name, false);
-                    var hottestNews = _hottestNewsByCategory.GetValueOrDefault(cat.Name);
-                    var hasImage = HasNewsImage(hottestNews);
+            @if (_isRefreshing && _recommendations.Count == 0)
+            {
+                <div class="jfy-state-card">
+                    <h2>Building your recommendations…</h2>
+                    <p>The AI is searching one preference at a time and avoiding stories already stored in NuctiusNow.</p>
+                </div>
+            }
+            else if (_recommendations.Count == 0)
+            {
+                <div class="jfy-state-card">
+                    <h2>No fresh recommendations found</h2>
+                    <p>Try refreshing later or add another preference.</p>
+                </div>
+            }
+            else
+            {
+                <main class="jfy-grid" aria-label="Personalized news feed">
+                    @foreach (var item in _recommendations)
+                    {
+                        var news = item.News;
+                        var preference = item.Preference;
+                        var hasImage = !string.IsNullOrWhiteSpace(news.DetailNews?.ImageUrl);
 
-                    <button class="news-box-link @GetCategoryToneClass(cat.Name)"
-                            type="button"
-                            disabled="@(isLoading || hottestNews == null)"
-                            @onclick="async () => await OpenCategoryNews(cat.Name, hottestNews)">
-                        <article class="news-box">
-                            <div class="card-media">
-                                @if (hasImage && hottestNews != null)
-                                {
-                                    <img class="news-overview-image"
-                                         src="@hottestNews.DetailNews!.ImageUrl"
-                                         alt="@(hottestNews.DetailNews?.Keyword ?? cat.Name)"
-                                         loading="lazy" />
-                                }
-                                else
-                                {
-                                    <div class="news-image-placeholder" aria-hidden="true">
-                                        <span>@GetCategoryInitial(cat.Name)</span>
-                                    </div>
-                                }
+                        <button class="news-box-link @GetToneClass(preference)"
+                                type="button"
+                                @onclick="async () => await OpenRecommendationAsync(news)">
+                            <article class="news-box">
+                                <div class="card-media">
+                                    @if (hasImage)
+                                    {
+                                        <img class="news-overview-image"
+                                             src="@news.DetailNews!.ImageUrl"
+                                             alt="@(news.DetailNews?.Keyword ?? preference)"
+                                             loading="lazy" />
+                                    }
+                                    else
+                                    {
+                                        <div class="news-image-placeholder" aria-hidden="true">
+                                            <span>@GetPreferenceInitial(preference)</span>
+                                        </div>
+                                    }
 
-                                <div class="card-media-shade"></div>
-                                <span class="category-tag">@cat.Name</span>
-                                <span class="category-rank">@cat.Rank.ToString("00")</span>
-                            </div>
-
-                            <div class="card-body">
-                                <div class="card-topline">
-                                    <span class="ai-badge">@GetSourceLabel(_sourceByCategory.GetValueOrDefault(cat.Name, NewsSelectionSource.None))</span>
-                                    <span class="category-weight">Preference @cat.Weight</span>
+                                    <div class="card-media-shade"></div>
+                                    <span class="category-tag">@preference</span>
+                                    <span class="category-rank">@((_recommendations.IndexOf(item) + 1).ToString("00"))</span>
                                 </div>
 
-                                @if (isLoading)
-                                {
-                                    <h2 class="news-title">Searching for a fresh story…</h2>
-                                    <p class="news-body">The recommendation engine is checking new articles for this topic.</p>
-                                }
-                                else if (hottestNews != null)
-                                {
-                                    <h2 class="news-title">@(hottestNews.DetailNews?.Keyword ?? "Untitled story")</h2>
+                                <div class="card-body">
+                                    <div class="card-topline">
+                                        <span class="ai-badge">@(item.IsSupplemental ? "AI EXTRA" : "AI PICK")</span>
+                                        <span class="category-weight">@GetPreferenceLabel(item)</span>
+                                    </div>
+
+                                    <h2 class="news-title">@(news.DetailNews?.Keyword ?? "Untitled story")</h2>
                                     <p class="news-body">
-                                        @(hottestNews.DetailNews?.AiSummary
-                                            ?? hottestNews.DetailNews?.Context
+                                        @(news.DetailNews?.AiSummary
+                                            ?? news.DetailNews?.Context
                                             ?? "No summary available.")
                                     </p>
 
                                     <div class="news-meta-row">
                                         <span class="news-meta">
-                                            @((hottestNews.DetailNews?.NewsDate ?? hottestNews.CapturedDate).ToLocalTime().ToString("dd MMM yyyy"))
+                                            @((news.DetailNews?.NewsDate ?? news.CapturedDate).ToLocalTime().ToString("dd MMM yyyy"))
                                         </span>
                                         <span class="read-story">Open story <span aria-hidden="true">→</span></span>
                                     </div>
-                                }
-                                else
-                                {
-                                    <h2 class="news-title">No story found</h2>
-                                    <p class="news-body">The AI and database fallbacks could not find a usable article for this topic.</p>
-                                }
-                            </div>
-                        </article>
-                    </button>
-                }
-            </main>
+                                </div>
+                            </article>
+                        </button>
+                    }
+                </main>
+            }
         }
     </div>
 
@@ -172,7 +169,7 @@
             <span>For You</span>
         </a>
         <a href="/search" class="bottom-nav-item">
-            <svg viewBox="0 0 24 24" class="bnav-icon" aria-hidden="true"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C8.01 14 6 11.99 6 9.5S8.01 5 10.5 5 15 7.01 15 9.5 12.99 14 10.5 14z" /></svg>
+            <svg viewBox="0 0 24 24" class="bnav-icon" aria-hidden="true"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C8.01 14 6 11.99 6 9.5 12.99 14 10.5 14 15 7.01 15 9.5 12.99 14 10.5 14z" /></svg>
             <span>Search</span>
         </a>
         <a href="/user-settings" class="bottom-nav-item">
@@ -184,14 +181,10 @@
 
 @code {
     private bool _isInitialized;
-    private bool _initialRefreshStarted;
     private bool _isRefreshing;
     private DateTimeOffset? _lastRefreshAt;
-
-    private List<Category> Categories { get; set; } = new();
-    private readonly ConcurrentDictionary<string, bool> _isLoading = new();
-    private readonly ConcurrentDictionary<string, News?> _hottestNewsByCategory = new();
-    private readonly ConcurrentDictionary<string, NewsSelectionSource> _sourceByCategory = new();
+    private readonly List<string> _preferences = new();
+    private List<RecommendationEngine.PersonalizedRecommendation> _recommendations = new();
 
     protected override async Task OnInitializedAsync()
     {
@@ -199,42 +192,8 @@
 
         if (sessionService.IsAuthenticated && sessionService.UserId.HasValue)
         {
-            var userId = sessionService.UserId.Value;
-
-            await using var db = await DbFactory.CreateDbContextAsync();
-            var preferredCategories = await db.UserPreferences
-                .Where(up => up.IdUser == userId && up.Preference != null && up.Preference.Tag != null)
-                .Select(up => new
-                {
-                    Name = up.Preference!.Tag!.Name,
-                    Weight = up.Preference.Weight
-                })
-                .ToListAsync();
-
-            preferredCategories = preferredCategories
-                .GroupBy(x => x.Name)
-                .Select(g => new
-                {
-                    Name = g.Key,
-                    Weight = g.Max(x => x.Weight)
-                })
-                .OrderByDescending(x => x.Weight)
-                .ThenBy(x => x.Name)
-                .ToList();
-
-            Categories = preferredCategories
-                .Select((item, index) => new Category(
-                    item.Name,
-                    item.Weight,
-                    index + 1))
-                .ToList();
-
-            foreach (var category in Categories)
-            {
-                _isLoading[category.Name] = true;
-                _hottestNewsByCategory[category.Name] = null;
-                _sourceByCategory[category.Name] = NewsSelectionSource.None;
-            }
+            _preferences.Clear();
+            _preferences.AddRange(await RecommendationEngine.GetUserPreferencesAsync(sessionService.UserId.Value));
         }
 
         _isInitialized = true;
@@ -242,122 +201,63 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!firstRender || _initialRefreshStarted || !sessionService.IsAuthenticated || Categories.Count == 0)
-            return;
-
-        _initialRefreshStarted = true;
-        await RefreshRecommendationsAsync();
+        if (firstRender && sessionService.IsAuthenticated && _preferences.Count > 0)
+            await RefreshRecommendationsAsync();
     }
 
     private async Task RefreshRecommendationsAsync()
     {
-        if (!sessionService.IsAuthenticated || !sessionService.UserId.HasValue || Categories.Count == 0 || _isRefreshing)
+        if (_isRefreshing || !sessionService.IsAuthenticated || !sessionService.UserId.HasValue)
             return;
 
         _isRefreshing = true;
-        foreach (var category in Categories)
-            _isLoading[category.Name] = true;
-
         await InvokeAsync(StateHasChanged);
 
         try
         {
-            var userId = sessionService.UserId.Value;
-
-            // Sequential execution avoids overloading the local LLM server with
-            // several expensive article-extraction requests at the same time.
-            foreach (var category in Categories)
-            {
-                await LoadCategoryNewsAsync(category, userId);
-            }
+            using var timeoutCts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+            _recommendations = await RecommendationEngine.GetPersonalizedRecommendationsAsync(
+                sessionService.UserId.Value,
+                timeoutCts.Token);
 
             _lastRefreshAt = DateTimeOffset.UtcNow;
+        }
+        catch (OperationCanceledException)
+        {
+            // The UI timeout prevents a hung local model from keeping the circuit busy forever.
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"JustForYou refresh failed: {ex}");
         }
         finally
         {
             _isRefreshing = false;
-            foreach (var category in Categories)
-                _isLoading[category.Name] = false;
-
             await InvokeAsync(StateHasChanged);
         }
     }
 
-    private async Task LoadCategoryNewsAsync(Category category, int userId)
+    private async Task OpenRecommendationAsync(News news)
     {
-        try
-        {
-            using var timeoutCts = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+        if (!sessionService.UserId.HasValue || news.IdNews <= 0)
+            return;
 
-            // JFY intentionally asks the AI first on every page entry/refresh.
-            // If that search cannot produce a new article, CategoryNewsService
-            // falls back to unseen/old/random database articles.
-            var result = await CategoryNewsService.GetNewsForCategoryAsync(
-                category.Name,
-                userId,
-                timeoutCts.Token,
-                forceAiSearchFirst: true);
-
-            _hottestNewsByCategory[category.Name] = result.News;
-            _sourceByCategory[category.Name] = result.Source;
-
-            if (result.News != null)
-            {
-                var imageUrl = await RecommendationEngine.EnsureNewsImageAsync(
-                    result.News.IdNews,
-                    CancellationToken.None);
-
-                if (!string.IsNullOrWhiteSpace(imageUrl) && result.News.DetailNews != null)
-                    result.News.DetailNews.ImageUrl = imageUrl;
-            }
-        }
-        catch (Exception ex)
-        {
-            Console.Error.WriteLine($"Unexpected error refreshing {category.Name}: {ex}");
-            _hottestNewsByCategory[category.Name] = null;
-            _sourceByCategory[category.Name] = NewsSelectionSource.None;
-        }
-        finally
-        {
-            _isLoading[category.Name] = false;
-            await InvokeAsync(StateHasChanged);
-        }
-    }
-
-    private async Task OpenCategoryNews(string category, News? news)
-    {
-        if (news == null || news.IdNews <= 0) return;
-
-        if (sessionService.IsAuthenticated && sessionService.UserId.HasValue)
-        {
-            var userId = sessionService.UserId.Value;
-            await RecommendationEngine.RegisterCategoryClickAsync(userId, news.IdNews);
-            await CategoryNewsService.RegisterNewsViewAsync(userId, news.IdNews);
-        }
+        await RecommendationEngine.RegisterCategoryClickAsync(
+            sessionService.UserId.Value,
+            news.IdNews);
 
         Navigation.NavigateTo($"/news-detail/{news.IdNews}");
     }
 
-    private static bool HasNewsImage(News? news) =>
-        !string.IsNullOrWhiteSpace(news?.DetailNews?.ImageUrl);
-
-    private static string GetCategoryInitial(string category) =>
-        string.IsNullOrWhiteSpace(category) ? "N" : category.Trim()[0].ToString().ToUpperInvariant();
-
-    private static string GetCategoryToneClass(string category)
+    private static string GetToneClass(string preference)
     {
-        var value = (int)(uint)category.GetHashCode() % 5;
+        var value = Math.Abs(preference.GetHashCode()) % 5;
         return $"tone-{value + 1}";
     }
 
-    private static string GetSourceLabel(NewsSelectionSource source) => source switch
-    {
-        NewsSelectionSource.AiSearch => "AI FRESH",
-        NewsSelectionSource.DatabaseRecentUnseen => "NEW TO YOU",
-        NewsSelectionSource.DatabaseOldUnseen => "UNSEEN ARCHIVE",
-        NewsSelectionSource.DatabaseRandomFallback => "ARCHIVE FALLBACK",
-        _ => "WAITING"
-    };
+    private static string GetPreferenceInitial(string preference) =>
+        string.IsNullOrWhiteSpace(preference) ? "N" : preference.Trim()[0].ToString().ToUpperInvariant();
 
-    public record Category(string Name, int Weight, int Rank);
+    private static string GetPreferenceLabel(RecommendationEngine.PersonalizedRecommendation item) =>
+        item.Weight > 0 ? $"Weight {item.Weight}" : "Personalized";
 }

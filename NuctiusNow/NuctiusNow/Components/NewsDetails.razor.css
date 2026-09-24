@@ -1014,3 +1014,84 @@
     gap: 0.5rem;
     flex-wrap: wrap;
 }
+.detail-source-block,
+.detail-reading-section,
+.additional-sources-section {
+    margin-top: 1.25rem;
+    padding: 1rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--bg-card);
+}
+
+.detail-section-label {
+    display: block;
+    margin-bottom: .45rem;
+    color: var(--accent);
+    font-size: .7rem;
+    font-weight: 800;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+}
+
+.detail-source-link {
+    display: inline-flex;
+    align-items: center;
+    gap: .45rem;
+    font-weight: 800;
+}
+
+.summary-section p { margin: 0; color: var(--text-primary); }
+
+.article-loading-state {
+    display: flex;
+    align-items: center;
+    gap: .9rem;
+    color: var(--text-secondary);
+}
+
+.article-loading-state .loading-spinner {
+    width: 28px;
+    height: 28px;
+    flex: 0 0 auto;
+}
+
+.additional-sources-section { margin-top: 1.25rem; }
+.additional-sources-intro { color: var(--text-secondary); margin-bottom: .8rem; }
+.additional-source-list { display: grid; gap: .55rem; }
+
+.additional-source-item {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: .7rem;
+    align-items: center;
+    padding: .75rem .85rem;
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-sm);
+    background: var(--bg-input);
+}
+
+.additional-source-owner { font-weight: 800; color: var(--accent); }
+.additional-source-title { color: var(--text-secondary); }
+.additional-source-arrow { color: var(--text-muted); }
+
+
+/* Source link refinement */
+.detail-source-link {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: .45rem .7rem;
+}
+
+.detail-source-url {
+    color: var(--text-secondary);
+    font-size: .8rem;
+    overflow-wrap: anywhere;
+}
+
+/* Theme-aware floating navigation */
+.bottom-nav {
+    background: color-mix(in srgb, var(--bg-card) 94%, transparent);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, .28);
+}

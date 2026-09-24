@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+﻿﻿using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 #pragma warning disable IDE0130 // Namespace does not match folder structure
@@ -20,6 +20,11 @@ public class UserPreference
 
     [Column("id_preference")]
     public int IdPreference { get; set; }
+
+    // User-specific recommendation weight. Unlike Preference.Weight, this value
+    // belongs only to this user's relationship with the preference.
+    [Column("weight")]
+    public int Weight { get; set; } = 1;
 
     [ForeignKey(nameof(IdPreference))]
     public Preference? Preference { get; set; }

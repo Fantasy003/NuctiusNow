@@ -1,18 +1,26 @@
-﻿using System;
+using System;
 
 public class ThemeState
 {
-    // El tema por defecto es dark
+    private static readonly HashSet<string> AllowedThemes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "dark", "light", "retro", "office"
+    };
+
     public string CurrentTheme { get; private set; } = "dark";
 
-    // Evento para avisarle a las pantallas que algo cambió
     public event Action? OnChange;
 
     public void SetTheme(string theme)
     {
-        CurrentTheme = theme;
-        NotifyStateChanged();
-    }
+        var normalized = AllowedThemes.Contains(theme)
+            ? theme.ToLowerInvariant()
+            : "dark";
 
-    private void NotifyStateChanged() => OnChange?.Invoke();
+        if (CurrentTheme == normalized)
+            return;
+
+        CurrentTheme = normalized;
+        OnChange?.Invoke();
+    }
 }

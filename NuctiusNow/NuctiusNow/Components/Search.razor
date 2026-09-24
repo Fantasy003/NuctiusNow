@@ -1,28 +1,30 @@
 @page "/search"
 @rendermode InteractiveServer
+@using Microsoft.JSInterop
+@using System.Text.RegularExpressions
 @using NuctiusNow.Services
+@implements IAsyncDisposable
 @inject UserSessionService sessionService
+@inject ILocalLlmService LocalLlmService
 @inject NavigationManager Navigation
+@inject IJSRuntime JS
 
 <PageTitle>Search News - NuctiusNow</PageTitle>
 
 <div class="search-page">
-
-    <!-- Search header -->
     <div class="search-header">
         <h1 class="search-heading">Search News</h1>
         <p class="search-subheading">Find stories by keyword</p>
     </div>
 
-    <!-- Search input bar -->
     <div class="search-bar-container">
         <div class="search-input-wrapper">
             <svg class="search-icon" viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C8.01 14 6 11.99 6 9.5S8.01 5 10.5 5 15 7.01 15 9.5 12.99 14 10.5 14z" />
             </svg>
-            <input 
-                type="text" 
-                class="search-input" 
+            <input
+                type="text"
+                class="search-input"
                 placeholder="Search by keyword..."
                 @bind="searchQuery"
                 @bind:event="oninput"
@@ -31,21 +33,20 @@
                 aria-label="Search news" />
             @if (!string.IsNullOrWhiteSpace(searchQuery))
             {
-                <button class="search-clear" @onclick="ClearSearch" aria-label="Clear search">?</button>
+                <button class="search-clear" @onclick="ClearSearch" aria-label="Clear search">×</button>
             }
         </div>
     </div>
 
-    <!-- Quick filter tags -->
     <div class="filter-tags-container">
-        <button 
+        <button
             class="filter-tag @(selectedCategory == null ? "active" : "")"
             @onclick="@(() => SelectCategory(null))">
             All News
         </button>
         @foreach (var category in Categories)
         {
-            <button 
+            <button
                 class="filter-tag @(selectedCategory == category ? "active" : "")"
                 @onclick="@(() => SelectCategory(category))">
                 @category
@@ -53,31 +54,37 @@
         }
     </div>
 
-    <!-- Search results or placeholder -->
-    @if (isSearching)
+    @if (isSearching && searchResults.Count == 0)
     {
         <div class="search-loading">
             <div class="loading-spinner"></div>
             <p>Searching for news...</p>
         </div>
     }
-    else if (!string.IsNullOrWhiteSpace(searchQuery) && (searchResults == null || searchResults.Count == 0))
+    else if (!string.IsNullOrWhiteSpace(searchQuery) && searchResults.Count == 0 && !_hasCompletedSearch)
+    {
+        <div class="search-loading">
+            <div class="loading-spinner"></div>
+            <p>Preparing the search...</p>
+        </div>
+    }
+    else if (!string.IsNullOrWhiteSpace(searchQuery) && searchResults.Count == 0)
     {
         <div class="search-empty">
             <svg viewBox="0 0 24 24" class="empty-icon" aria-hidden="true">
-                <path d="M15.5 1h-8C6.12 1 5 2.12 5 3.5v17C5 21.88 6.12 23 7.5 23h8c1.38 0 2.5-1.12 2.5-2.5v-17C18 2.12 16.88 1 15.5 1zm-4 21c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm4.5-4H7V4h9v14z" />
+                <path d="M15.5 1h-8C6.12 1 5 2.12 5 3.5v17C5 21.88 6.12 23 7.5 23h8c1.38 0 2.5-1.12 2.5-2.5v-17C18 2.12 16.88 1 15.5 1z" />
             </svg>
             <p>No news found for "<strong>@searchQuery</strong>"</p>
             <p class="empty-hint">Try different keywords or browse by category</p>
         </div>
     }
-    else if (searchResults != null && searchResults.Count > 0)
+    else if (searchResults.Count > 0)
     {
         <div class="search-results-container">
             @foreach (var article in searchResults)
             {
                 <div class="search-result-card">
-                    <div class="result-image" style="background-image: url('@article.ImageUrl');">
+                    <div class="result-image" style="background-image: @(string.IsNullOrWhiteSpace(article.ImageUrl) ? "none" : $"url('{article.ImageUrl}')");">
                         <span class="result-category">@article.Category</span>
                         <div class="result-overlay"></div>
                     </div>
@@ -85,13 +92,26 @@
                         <h3 class="result-title">@article.Title</h3>
                         <p class="result-snippet">@article.Snippet</p>
                         <div class="result-footer">
-                            <span class="result-date">@article.PublishedDate.ToString("MMM d, yyyy")</span>
-                            <a href="@article.Url" class="result-link" target="_blank" rel="noopener noreferrer">Read more ?</a>
+                            <span class="result-date">@article.PublishedDate.ToLocalTime().ToString("MMM d, yyyy")</span>
+                            <a href="@article.Url" class="result-link" target="_blank" rel="noopener noreferrer">Read more →</a>
                         </div>
                     </div>
                 </div>
             }
         </div>
+
+        @if (isLoadingMore)
+        {
+            <div class="search-more-status">Searching for more news…</div>
+        }
+        else if (cooldownRemainingSeconds > 0)
+        {
+            <div class="search-more-status">More results available in @cooldownRemainingSeconds seconds…</div>
+        }
+        else
+        {
+            <div class="search-more-status">Scroll to the end for more results.</div>
+        }
     }
     else
     {
@@ -103,135 +123,318 @@
         </div>
     }
 
-    <!-- Mobile bottom navigation -->
     <nav class="bottom-nav" role="navigation" aria-label="Bottom navigation">
         <a href="/" class="bottom-nav-item">
-            <svg viewBox="0 0 24 24" class="bnav-icon" aria-hidden="true"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
+            <svg viewBox="0 0 24 24" class="bnav-icon" aria-hidden="true"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z" /></svg>
             <span>Home</span>
         </a>
         <a href="/just-for-you" class="bottom-nav-item">
-            <svg viewBox="0 0 24 24" class="bnav-icon" aria-hidden="true"><path d="M12 21.593c-5.63-5.539-11-10.297-11-14.402 0-3.791 3.068-5.191 5.281-5.191 1.312 0 4.151.501 5.719 4.457 1.59-3.968 4.464-4.447 5.726-4.447 2.54 0 5.274 1.621 5.274 5.181 0 4.069-5.136 8.625-11 14.402z"/></svg>
+            <svg viewBox="0 0 24 24" class="bnav-icon" aria-hidden="true"><path d="M12 21.593c-5.63-5.539-11-10.297-11-14.402 0-3.791 3.068-5.191 5.281-5.191 1.312 0 4.151.501 5.719 4.457 1.59-3.968 4.464-4.447 5.726-4.447 2.54 0 5.274 1.621 5.274 5.181 0 4.069-5.136 8.625-11 14.402z" /></svg>
             <span>For You</span>
         </a>
         <a href="/search" class="bottom-nav-item active">
-            <svg viewBox="0 0 24 24" class="bnav-icon" aria-hidden="true"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C8.01 14 6 11.99 6 9.5S8.01 5 10.5 5 15 7.01 15 9.5 12.99 14 10.5 14z" /></svg>
+            <svg viewBox="0 0 24 24" class="bnav-icon" aria-hidden="true"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C8.01 14 6 11.99 6 9.5S8.01 14 10.5 14z" /></svg>
             <span>Search</span>
         </a>
         <a href="/user-settings" class="bottom-nav-item">
-            <svg viewBox="0 0 24 24" class="bnav-icon" aria-hidden="true"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
+            <svg viewBox="0 0 24 24" class="bnav-icon" aria-hidden="true"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" /></svg>
             <span>Settings</span>
         </a>
     </nav>
-
 </div>
 
 @code {
-    private string searchQuery = "";
-    private string? selectedCategory = null;
-    private bool isSearching = false;
-    private List<SearchResult>? searchResults;
-    private List<string> Categories = new()
-    {
-        "Technology", "Sports", "Politics", "Health", "Business", "Entertainment"
-    };
+    private string searchQuery = string.Empty;
+    private string? selectedCategory;
+    private bool isSearching;
+    private bool isLoadingMore;
+    private bool _hasCompletedSearch;
+    private DateTimeOffset? lastSearchRequestAt;
+    private int cooldownRemainingSeconds;
+    private CancellationTokenSource? searchCts;
+    private DotNetObjectReference<Search>? _dotNetRef;
+    private int _searchGeneration;
+    private List<SearchResult> searchResults = new();
+    private readonly HashSet<string> usedUrls = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> usedTitles = new(StringComparer.OrdinalIgnoreCase);
 
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (!firstRender) return;
+    private List<string> Categories { get; } =
+        new() { "Technology", "Sports", "Politics", "Health", "Business", "Entertainment" };
 
+    protected override async Task OnInitializedAsync()
+    {
         await sessionService.InitializeAsync();
         if (!sessionService.IsAuthenticated)
         {
             Navigation.NavigateTo("/login", true);
+            return;
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try
+            {
+                _dotNetRef = DotNetObjectReference.Create(this);
+                await JS.InvokeVoidAsync("newsSearchScroll.register", _dotNetRef);
+            }
+            catch { }
         }
     }
 
     private async Task HandleSearchKeyUp(KeyboardEventArgs e)
     {
         if (e.Key == "Enter")
-        {
-            await PerformSearch();
-        }
+            await PerformSearchAsync();
     }
 
-    private async Task PerformSearch()
+    private async Task PerformSearchAsync()
     {
-        if (string.IsNullOrWhiteSpace(searchQuery))
+        var text = searchQuery.Trim();
+        if (string.IsNullOrWhiteSpace(text))
         {
-            searchResults = null;
+            searchResults.Clear();
+            _hasCompletedSearch = false;
+            await InvokeAsync(StateHasChanged);
             return;
         }
 
+        searchCts?.Cancel();
+        searchCts?.Dispose();
+        // This CTS represents the current search generation. It stays alive for the
+        // whole time the query remains active so the 15-second scroll cooldown is
+        // never accidentally cancelled by a two-minute request timeout.
+        searchCts = new CancellationTokenSource();
+        _searchGeneration++;
+
+        searchResults.Clear();
+        usedUrls.Clear();
+        usedTitles.Clear();
         isSearching = true;
-        StateHasChanged();
+        isLoadingMore = false;
+        _hasCompletedSearch = false;
+        cooldownRemainingSeconds = 0;
+        await InvokeAsync(StateHasChanged);
 
-        // Simulate API call delay
-        await Task.Delay(600);
-
-        // Mock search results based on query
-        searchResults = GenerateMockResults(searchQuery, selectedCategory);
-        isSearching = false;
-        StateHasChanged();
-    }
-
-    private List<SearchResult> GenerateMockResults(string query, string? category)
-    {
-        var results = new List<SearchResult>
+        try
         {
-            new SearchResult
-            {
-                Title = $"Latest updates on {query} innovation",
-                Snippet = $"Breaking news about recent developments in {query}. Industry experts weigh in on the impact and future prospects...",
-                Category = category ?? "Technology",
-                ImageUrl = "https://images.unsplash.com/photo-1518770660439-4636190af475?w=400&q=80",
-                Url = "https://example.com/article-1",
-                PublishedDate = DateTime.Now.AddHours(-2)
-            },
-            new SearchResult
-            {
-                Title = $"How {query} is changing the world",
-                Snippet = $"In-depth analysis of how {query} impacts society, economy, and culture. Expert opinions and forecasts included...",
-                Category = category ?? "Business",
-                ImageUrl = "https://images.unsplash.com/photo-1590283603385-17ffb3a7f29f?w=400&q=80",
-                Url = "https://example.com/article-2",
-                PublishedDate = DateTime.Now.AddHours(-4)
-            },
-            new SearchResult
-            {
-                Title = $"{query}: What you need to know today",
-                Snippet = $"A comprehensive guide to understanding {query}. Everything from basics to advanced topics covered...",
-                Category = category ?? "Entertainment",
-                ImageUrl = "https://images.unsplash.com/photo-1505751172876-fa1923c5c528?w=400&q=80",
-                Url = "https://example.com/article-3",
-                PublishedDate = DateTime.Now.AddDays(-1)
-            }
-        };
+            var task = BuildSearchTask(text, isLoadMore: false);
+            using var requestCts = CancellationTokenSource.CreateLinkedTokenSource(searchCts.Token);
+            requestCts.CancelAfter(TimeSpan.FromMinutes(2));
 
-        return results;
+            var results = await LocalLlmService.SearchWebAsync(
+                task,
+                maxResults: 5,
+                cancellationToken: requestCts.Token);
+
+            AddResults(results, 5);
+            lastSearchRequestAt = DateTimeOffset.UtcNow;
+            UpdateCooldown();
+        }
+        catch (OperationCanceledException) when (searchCts?.IsCancellationRequested == true) { }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Search request failed: {ex}");
+        }
+        finally
+        {
+            isSearching = false;
+            _hasCompletedSearch = true;
+            await InvokeAsync(StateHasChanged);
+        }
     }
 
-    private void SelectCategory(string? category)
+    [JSInvokable]
+    public async Task OnSearchReachedEnd()
+    {
+        if (isSearching || isLoadingMore || !_hasCompletedSearch ||
+            string.IsNullOrWhiteSpace(searchQuery) || searchResults.Count == 0)
+            return;
+
+        // Lock immediately so repeated bottom-of-page scroll events cannot create
+        // multiple waiting tasks that all fire after the 15-second cooldown.
+        isLoadingMore = true;
+        var generation = _searchGeneration;
+        var querySnapshot = searchQuery.Trim();
+
+        try
+        {
+            if (lastSearchRequestAt.HasValue)
+            {
+                var elapsed = DateTimeOffset.UtcNow - lastSearchRequestAt.Value;
+                var remaining = TimeSpan.FromSeconds(15) - elapsed;
+
+                if (remaining > TimeSpan.Zero)
+                {
+                    var endAt = DateTimeOffset.UtcNow + remaining;
+                    while (remaining > TimeSpan.Zero)
+                    {
+                        cooldownRemainingSeconds = Math.Max(1, (int)Math.Ceiling(remaining.TotalSeconds));
+                        await InvokeAsync(StateHasChanged);
+                        var delay = remaining > TimeSpan.FromSeconds(1)
+                            ? TimeSpan.FromSeconds(1)
+                            : remaining;
+                        await Task.Delay(delay, searchCts?.Token ?? CancellationToken.None);
+                        remaining = endAt - DateTimeOffset.UtcNow;
+                    }
+                }
+            }
+
+            // A new search may have been entered while we were waiting. In that
+            // case, do not issue an AI request for the old query.
+            if (generation != _searchGeneration ||
+                !string.Equals(querySnapshot, searchQuery.Trim(), StringComparison.Ordinal))
+                return;
+
+            cooldownRemainingSeconds = 0;
+            await InvokeAsync(StateHasChanged);
+            await LoadMoreResultsAsync(querySnapshot, generation);
+        }
+        catch (OperationCanceledException)
+        {
+            // Search was replaced or the component is being disposed.
+        }
+        finally
+        {
+            isLoadingMore = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task LoadMoreResultsAsync(string querySnapshot, int generation)
+    {
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(
+            searchCts?.Token ?? CancellationToken.None);
+        cts.CancelAfter(TimeSpan.FromMinutes(2));
+
+        var task = BuildSearchTask(querySnapshot, isLoadMore: true);
+        var results = await LocalLlmService.SearchWebAsync(
+            task,
+            maxResults: 5,
+            cancellationToken: cts.Token);
+
+        if (generation != _searchGeneration ||
+            !string.Equals(querySnapshot, searchQuery.Trim(), StringComparison.Ordinal))
+            return;
+
+        AddResults(results, 5);
+        lastSearchRequestAt = DateTimeOffset.UtcNow;
+        UpdateCooldown();
+    }
+
+    private string BuildSearchTask(string query, bool isLoadMore)
+    {
+        // Avoid C# raw string literals (""") here because Razor parsing can treat them as
+        // markup/code boundaries in some Visual Studio/Razor toolchain combinations.
+        var task =
+            "Search the public internet for current news related to the user's search request.\n" +
+            "Interpret the request semantically; it may refer to a person, company, product,\n" +
+            "sport, disease, event, place, technology or any other subject. Use the search_web\n" +
+            "tool and return real news results, not model memory.\n\n" +
+            "USER SEARCH:\n" +
+            query + "\n";
+
+        if (!string.IsNullOrWhiteSpace(selectedCategory))
+            task += "\nCATEGORY FILTER: " + selectedCategory;
+
+        if (isLoadMore)
+        {
+            task += "\nThis is a continuation request. Find five additional and DIFFERENT articles.";
+            if (usedUrls.Count > 0)
+                task += " Do not return these URLs: " + string.Join(" | ", usedUrls.Take(20));
+            if (usedTitles.Count > 0)
+                task += " Do not return these titles: " + string.Join(" | ", usedTitles.Take(20));
+        }
+
+        return task;
+    }
+
+    private void AddResults(
+        IEnumerable<(string Title, string Url, string Snippet)> results,
+        int numberToAdd)
+    {
+        var targetCount = searchResults.Count + numberToAdd;
+
+        foreach (var item in results)
+        {
+            if (searchResults.Count >= targetCount)
+                break;
+
+            var url = item.Url?.Trim() ?? string.Empty;
+            var title = item.Title?.Trim() ?? string.Empty;
+            var normalizedTitle = NormalizeTitle(title);
+
+            if (string.IsNullOrWhiteSpace(url) || usedUrls.Contains(url) ||
+                (!string.IsNullOrWhiteSpace(normalizedTitle) && usedTitles.Contains(normalizedTitle)))
+                continue;
+
+            searchResults.Add(new SearchResult
+            {
+                Title = string.IsNullOrWhiteSpace(title) ? "Untitled story" : title,
+                Snippet = string.IsNullOrWhiteSpace(item.Snippet) ? "No summary available." : item.Snippet.Trim(),
+                Category = selectedCategory ?? "Web",
+                Url = url,
+                PublishedDate = DateTime.UtcNow
+            });
+
+            usedUrls.Add(url);
+            if (!string.IsNullOrWhiteSpace(normalizedTitle))
+                usedTitles.Add(normalizedTitle);
+        }
+    }
+
+    private static string NormalizeTitle(string title) =>
+        Regex.Replace(title.ToLowerInvariant(), @"[^\p{L}\p{N}]+", " ").Trim();
+
+    private async Task SelectCategory(string? category)
     {
         selectedCategory = category;
         if (!string.IsNullOrWhiteSpace(searchQuery))
-        {
-            _ = PerformSearch();
-        }
+            await PerformSearchAsync();
     }
 
     private void ClearSearch()
     {
-        searchQuery = "";
-        searchResults = null;
+        _searchGeneration++;
+        searchCts?.Cancel();
+        searchQuery = string.Empty;
+        searchResults.Clear();
+        _hasCompletedSearch = false;
+        usedUrls.Clear();
+        usedTitles.Clear();
     }
 
-    public class SearchResult
+    private void UpdateCooldown()
     {
-        public string Title { get; set; } = "";
-        public string Snippet { get; set; } = "";
-        public string Category { get; set; } = "";
-        public string ImageUrl { get; set; } = "";
-        public string Url { get; set; } = "";
+        if (!lastSearchRequestAt.HasValue)
+        {
+            cooldownRemainingSeconds = 0;
+            return;
+        }
+
+        var remaining = TimeSpan.FromSeconds(15) - (DateTimeOffset.UtcNow - lastSearchRequestAt.Value);
+        cooldownRemainingSeconds = remaining > TimeSpan.Zero
+            ? (int)Math.Ceiling(remaining.TotalSeconds)
+            : 0;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        searchCts?.Cancel();
+        searchCts?.Dispose();
+        _dotNetRef?.Dispose();
+        try { await JS.InvokeVoidAsync("newsSearchScroll.dispose"); } catch { }
+    }
+
+    public sealed class SearchResult
+    {
+        public string Title { get; set; } = string.Empty;
+        public string Snippet { get; set; } = string.Empty;
+        public string Category { get; set; } = string.Empty;
+        public string ImageUrl { get; set; } = string.Empty;
+        public string Url { get; set; } = string.Empty;
         public DateTime PublishedDate { get; set; }
     }
 }

@@ -2,6 +2,7 @@
 @implements IAsyncDisposable
 
 @using System.Diagnostics
+@using System.Text.Json
 @using System.Text.RegularExpressions
 @using Microsoft.EntityFrameworkCore
 @using NuctiusNow.Data
@@ -17,13 +18,13 @@
 
 @if (isLoading)
 {
-    <div class="news-detail-page" style="display:flex; justify-content:center; align-items:center; padding-top: 4rem;">
+    <div class="news-detail-page" style="display:flex; justify-content:center; align-items:center; padding-top:4rem;">
         <div class="loading-spinner"></div>
     </div>
 }
 else if (currentNews == null)
 {
-    <div class="news-detail-page" style="display:flex; justify-content:center; align-items:center; padding-top: 4rem;">
+    <div class="news-detail-page" style="display:flex; justify-content:center; align-items:center; padding-top:4rem;">
         <div class="error-message">Requested news not found.</div>
     </div>
 }
@@ -32,7 +33,7 @@ else
     <div class="news-detail-page">
         <div class="back-nav">
             <button class="btn-back" @onclick="GoBack">
-                <svg viewBox="0 0 24 24" style="width:20px;height:20px;fill:currentColor;"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z" /></svg>
+                <svg viewBox="0 0 24 24" style="width:20px;height:20px;fill:currentColor;"><path d="M20 11H7.83l5.59-5.59L12 4l8 8-8 8 1.41 1.41L7.83 13H20v-2z" /></svg>
                 Back
             </button>
         </div>
@@ -40,10 +41,22 @@ else
         <article class="detail-card">
             <div class="meta-info">
                 <span class="category">@(currentNews.Tag?.Name ?? "General")</span>
-                <span class="news-id">@currentNews.CapturedDate.ToString("MMM d, yyyy - HH:mm")</span>
+                <span class="news-id">@((currentNews.DetailNews?.NewsDate ?? currentNews.CapturedDate).ToLocalTime().ToString("MMM d, yyyy - HH:mm"))</span>
             </div>
 
             <h1 class="detail-title">@(currentNews.DetailNews?.Keyword ?? "No Title Available")</h1>
+
+            <div class="detail-source-block">
+                <span class="detail-section-label">SOURCE</span>
+                @if (!string.IsNullOrWhiteSpace(currentNews.Hyperlink))
+                {
+                    <a href="@currentNews.Hyperlink" target="_blank" rel="noopener noreferrer" class="detail-source-link">
+                        <span>@GetSourceOwner(currentNews.Hyperlink)</span>
+                        <span class="detail-source-url">@currentNews.Hyperlink</span>
+                        <span aria-hidden="true">↗</span>
+                    </a>
+                }
+            </div>
 
             <div class="detail-content-layout">
                 @if (!string.IsNullOrWhiteSpace(heroImageUrl))
@@ -52,17 +65,19 @@ else
                 }
 
                 <div class="detail-text">
-                    <!-- NEW: AI Summary Section -->
-                    <div class="summary-section" style="background-color: #f0f7ff; padding: 1.2rem; border-left: 4px solid #007bff; border-radius: 4px; margin-bottom: 2rem;">
-                        <h3 style="margin-top: 0; color: #0056b3; font-size: 1.1rem;">AI Summary</h3>
-                        <p style="margin-bottom: 0;">@(currentNews.DetailNews?.Context ?? "No summary available.")</p>
-                    </div>
+                    <section class="summary-section detail-reading-section">
+                        <div class="detail-section-label">AI SUMMARY</div>
+                        <p>@(currentNews.DetailNews?.AiSummary ?? currentNews.DetailNews?.Context ?? "No summary available.")</p>
+                    </section>
 
-                    <!-- Full Article Section -->
-                    <div class="full-article-section">
-                        @if (isExtractingFullBodyText)
+                    <section class="full-article-section detail-reading-section">
+                        <div class="detail-section-label">AI GENERATED ARTICLE</div>
+                        @if (isGeneratingArticle)
                         {
-                            <p><i>Extracting the full article text...</i></p>
+                            <div class="article-loading-state">
+                                <div class="loading-spinner"></div>
+                                <p>The AI is assembling this article from multiple web sources…</p>
+                            </div>
                         }
                         else if (!string.IsNullOrWhiteSpace(currentNews.DetailNews?.FullBodyText))
                         {
@@ -74,9 +89,9 @@ else
                         }
                         else
                         {
-                            <p><i>The full text for this article is not available.</i></p>
+                            <p><i>The AI generated article is not available right now.</i></p>
                         }
-                    </div>
+                    </section>
                 </div>
             </div>
 
@@ -91,10 +106,6 @@ else
                         <span class="action-count">@currentNews.Dislikes</span>
                     </button>
                 </div>
-                
-                <button class="btn-action btn-share" @onclick="ShareArticle">
-                    <span class="action-icon">⤴</span> Share
-                </button>
             </div>
 
             <section class="comments-section">
@@ -114,7 +125,7 @@ else
                     </div>
                 }
 
-                @if (commentError != null)
+                @if (!string.IsNullOrWhiteSpace(commentError))
                 {
                     <p class="comment-error">@commentError</p>
                 }
@@ -130,6 +141,24 @@ else
                     }
                 </ul>
             </section>
+
+            @if (additionalSources.Count > 0)
+            {
+                <section class="additional-sources-section">
+                    <div class="detail-section-label">ADDITIONAL SOURCES USED BY THE AI</div>
+                    <p class="additional-sources-intro">These independent sources supplied supporting information for the generated article.</p>
+                    <div class="additional-source-list">
+                        @foreach (var source in additionalSources)
+                        {
+                            <a href="@source.Url" class="additional-source-item" target="_blank" rel="noopener noreferrer">
+                                <span class="additional-source-owner">@source.Owner</span>
+                                <span class="additional-source-title">@source.Title</span>
+                                <span class="additional-source-arrow" aria-hidden="true">↗</span>
+                            </a>
+                        }
+                    </div>
+                </section>
+            }
         </article>
 
         <nav class="bottom-nav" role="navigation" aria-label="Bottom navigation">
@@ -142,7 +171,7 @@ else
                 <span>For You</span>
             </a>
             <a href="/search" class="bottom-nav-item">
-                <svg viewBox="0 0 24 24" class="bnav-icon" aria-hidden="true"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C8.01 14 6 11.99 6 9.5S8.01 5 10.5 5 15 7.01 15 9.5 12.99 14 10.5 14z" /></svg>
+                <svg viewBox="0 0 24 24" class="bnav-icon" aria-hidden="true"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5z" /></svg>
                 <span>Search</span>
             </a>
             <a href="/user-settings" class="bottom-nav-item">
@@ -170,14 +199,14 @@ else
     private string? commentError;
     private bool scrollInterestRegistered;
     private bool timerInterestRegistered;
-    private bool isExtractingFullBodyText;
+    private bool isGeneratingArticle;
     private string? fullBodyError;
+    private List<AdditionalSource> additionalSources = new();
 
     protected override async Task OnInitializedAsync()
     {
         await sessionService.InitializeAsync();
-        
-        isLoading = true;
+
         currentNews = await DbContext.News
             .Include(n => n.Tag)
             .Include(n => n.DetailNews)
@@ -185,32 +214,48 @@ else
 
         if (currentNews != null)
         {
-            heroImageUrl = ExtractImageUrl(currentNews.DetailNews?.Context);
+            heroImageUrl = currentNews.DetailNews?.ImageUrl ?? ExtractImageUrl(currentNews.DetailNews?.Context);
+            LoadAdditionalSources();
 
-            // Older records can predate full-body extraction. Backfill the article
-            // through the LLM when the user opens the news, then display it below.
-            if (string.IsNullOrWhiteSpace(currentNews.DetailNews?.FullBodyText) ||
-                currentNews.DetailNews.FullBodyText.TrimStart().StartsWith(
-                    "This is placeholder raw data gathered from analyzing the article",
-                    StringComparison.OrdinalIgnoreCase))
+            if (currentNews.DetailNews != null &&
+                (currentNews.DetailNews.BodySource != "AiGenerated" ||
+                 string.IsNullOrWhiteSpace(currentNews.DetailNews.FullBodyText)))
             {
-                isExtractingFullBodyText = true;
+                isGeneratingArticle = true;
                 try
                 {
-                    var extractedBody = await recommendationEngine.EnsureFullBodyTextAsync(Id);
-                    if (!string.IsNullOrWhiteSpace(extractedBody) && currentNews.DetailNews != null)
+                    var generated = await recommendationEngine.EnsureAiGeneratedArticleAsync(Id);
+                    if (!string.IsNullOrWhiteSpace(generated))
                     {
-                        currentNews.DetailNews.FullBodyText = extractedBody;
+                        currentNews = await DbContext.News
+                            .Include(n => n.Tag)
+                            .Include(n => n.DetailNews)
+                            .FirstOrDefaultAsync(n => n.IdNews == Id);
+                    }
+
+                    // If AI article generation failed, keep the previous deterministic
+                    // extraction path as a secondary fallback.
+                    if (string.IsNullOrWhiteSpace(currentNews?.DetailNews?.FullBodyText))
+                    {
+                        var fallbackBody = await recommendationEngine.EnsureFullBodyTextAsync(Id);
+                        if (!string.IsNullOrWhiteSpace(fallbackBody))
+                        {
+                            currentNews = await DbContext.News
+                                .Include(n => n.Tag)
+                                .Include(n => n.DetailNews)
+                                .FirstOrDefaultAsync(n => n.IdNews == Id);
+                        }
                     }
                 }
                 catch (Exception ex)
                 {
-                    fullBodyError = "The full article text could not be extracted right now.";
-                    Console.Error.WriteLine($"Full article extraction failed for news {Id}: {ex}");
+                    fullBodyError = "The AI generated article could not be created right now.";
+                    Console.Error.WriteLine($"AI article generation failed for news {Id}: {ex}");
                 }
                 finally
                 {
-                    isExtractingFullBodyText = false;
+                    isGeneratingArticle = false;
+                    LoadAdditionalSources();
                 }
             }
 
@@ -218,6 +263,30 @@ else
         }
 
         isLoading = false;
+    }
+
+    private void LoadAdditionalSources()
+    {
+        additionalSources = new List<AdditionalSource>();
+        var json = currentNews?.DetailNews?.AdditionalSourcesJson;
+        if (string.IsNullOrWhiteSpace(json))
+            return;
+
+        try
+        {
+            var parsed = JsonSerializer.Deserialize<List<AdditionalSource>>(json,
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            if (parsed != null)
+            {
+                additionalSources = parsed
+                    .Where(x => !string.IsNullOrWhiteSpace(x.Url))
+                    .ToList();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Could not parse additional sources for news {Id}: {ex.Message}");
+        }
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -249,10 +318,7 @@ else
         {
             await JS.InvokeVoidAsync("newsDetailScroll.registerScrollEnd", dotNetRef);
         }
-        catch
-        {
-            // JS no disponible en prerender
-        }
+        catch { }
     }
 
     [JSInvokable]
@@ -262,27 +328,42 @@ else
         scrollInterestRegistered = true;
 
         if (sessionService.UserId.HasValue)
-        {
             await recommendationEngine.MarkNewsInterestAsync(sessionService.UserId.Value, Id);
-        }
     }
 
     private static string? ExtractImageUrl(string? context)
     {
         if (string.IsNullOrWhiteSpace(context)) return null;
-
         var match = Regex.Match(context, @"https?://[^\s""']+\.(?:jpg|jpeg|png|gif|webp)", RegexOptions.IgnoreCase);
         return match.Success ? match.Value : null;
     }
 
-    private async Task GoBack()
+    private static string GetSourceOwner(string url)
     {
-        await JS.InvokeVoidAsync("history.back");
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+            return "Source";
+        var host = uri.Host.ToLowerInvariant();
+        if (host.StartsWith("www.")) host = host[4..];
+
+        return host switch
+        {
+            "clarin.com" => "Clarín",
+            "cronica.com.ar" => "Crónica",
+            "perfil.com" => "Perfil",
+            "lanacion.com.ar" => "La Nación",
+            "infobae.com" => "Infobae",
+            "pagina12.com.ar" => "Página/12",
+            "tn.com.ar" => "TN",
+            "bbc.com" or "bbc.co.uk" => "BBC",
+            "reuters.com" => "Reuters",
+            "apnews.com" => "AP",
+            "nytimes.com" => "The New York Times",
+            "theguardian.com" => "The Guardian",
+            _ => host
+        };
     }
-    
-    private void ShareArticle()
-    {
-    }
+
+    private async Task GoBack() => await JS.InvokeVoidAsync("history.back");
 
     private async Task HandleInteraction(bool isLike)
     {
@@ -290,23 +371,13 @@ else
 
         if (isLike)
         {
-            if (hasLiked)
-            {
-                hasLiked = false;
-                StateHasChanged();
-                return;
-            }
+            if (hasLiked) { hasLiked = false; StateHasChanged(); return; }
             hasLiked = true;
             hasDisliked = false;
         }
         else
         {
-            if (hasDisliked)
-            {
-                hasDisliked = false;
-                StateHasChanged();
-                return;
-            }
+            if (hasDisliked) { hasDisliked = false; StateHasChanged(); return; }
             hasDisliked = true;
             hasLiked = false;
         }
@@ -314,8 +385,8 @@ else
         if (sessionService.UserId.HasValue)
         {
             await recommendationEngine.RegisterInteractionAsync(
-                userId: sessionService.UserId.Value,
-                newsId: Id,
+                sessionService.UserId.Value,
+                Id,
                 liked: isLike,
                 interested: isLike);
 
@@ -364,32 +435,30 @@ else
     public async ValueTask DisposeAsync()
     {
         readingInterestTimer?.Dispose();
-
-        try
-        {
-            await JS.InvokeVoidAsync("newsDetailScroll.dispose");
-        }
-        catch { }
-
+        try { await JS.InvokeVoidAsync("newsDetailScroll.dispose"); } catch { }
         dotNetRef?.Dispose();
 
         if (readingTimer.IsRunning)
         {
             readingTimer.Stop();
             var timeSpentSeconds = readingTimer.Elapsed.TotalSeconds;
-
             if (sessionService.UserId.HasValue && timeSpentSeconds > 3 && currentNews != null)
             {
                 await recommendationEngine.RegisterReadingTimeAsync(
-                    userId: sessionService.UserId.Value,
-                    newsId: Id,
-                    timeSpentSeconds: timeSpentSeconds);
+                    sessionService.UserId.Value,
+                    Id,
+                    timeSpentSeconds);
 
                 if (timeSpentSeconds >= 120)
-                {
                     await recommendationEngine.MarkNewsInterestAsync(sessionService.UserId.Value, Id);
-                }
             }
         }
+    }
+
+    private sealed class AdditionalSource
+    {
+        public string Title { get; set; } = string.Empty;
+        public string Url { get; set; } = string.Empty;
+        public string Owner { get; set; } = "Source";
     }
 }

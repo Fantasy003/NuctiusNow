@@ -37,6 +37,9 @@ public class User
     [Column("created_at")]
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
+    [Column("last_profile_update_at")]
+    public DateTime? LastProfileUpdateAt { get; set; }
+
     // Navigation Properties
     public virtual ICollection<UserPreference> UserPreferences { get; set; } = new List<UserPreference>();
     public virtual ICollection<UserNews> UserNews { get; set; } = new List<UserNews>();

@@ -1,4 +1,4 @@
-﻿/* ============================================================
+﻿﻿/* ============================================================
    SEARCH PAGE — Mobile-First Search Interface
    ============================================================ */
 
@@ -391,4 +391,13 @@
     .bottom-nav {
         display: none !important;
     }
+}
+.search-more-status {
+    margin: 1.25rem 0 2rem;
+    padding: .8rem 1rem;
+    text-align: center;
+    color: var(--text-secondary);
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    font-size: .85rem;
 }
