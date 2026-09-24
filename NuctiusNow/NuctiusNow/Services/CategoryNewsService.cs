@@ -58,6 +58,8 @@ public class CategoryNewsService
 
             if (recentUnseen != null)
             {
+                await EnsureNewsImageIfMissingAsync(recentUnseen, cancellationToken);
+
                 return new CategoryNewsResult
                 {
                     News = recentUnseen,
@@ -76,6 +78,10 @@ public class CategoryNewsService
             var aiNews = await recommendationEngine.ExecuteAiSearchForCategoryAsync(category, userId, ignoreOneYearRestriction: false, cancellationToken: cancellationToken);
             if (aiNews != null)
             {
+                // The AI-selected story is immediately paired with a direct image
+                // from SearXNG's Images category so Home can render it.
+                await EnsureNewsImageIfMissingAsync(aiNews, cancellationToken);
+
                 // UserNews with Seen=false explicitly represents an article that is
                 // available in the user's feed but has not been opened yet.
                 if (userId.HasValue)
@@ -105,6 +111,8 @@ public class CategoryNewsService
         var oldUnseen = await GetRandomNewsAsync(category, userId, minimumDate: null, onlyUnseen: true, cancellationToken);
         if (oldUnseen != null)
         {
+            await EnsureNewsImageIfMissingAsync(oldUnseen, cancellationToken);
+
             return new CategoryNewsResult { News = oldUnseen, Source = NewsSelectionSource.DatabaseOldUnseen, AiFailed = true };
         }
 
@@ -114,6 +122,8 @@ public class CategoryNewsService
             var unrestrictedAiNews = await recommendationEngine.ExecuteAiSearchForCategoryAsync(category, userId, ignoreOneYearRestriction: true, cancellationToken: cancellationToken);
             if (unrestrictedAiNews != null)
             {
+                await EnsureNewsImageIfMissingAsync(unrestrictedAiNews, cancellationToken);
+
                 // The unrestricted AI retry is also a new/available article, so register it
                 // as unseen for this user before it is displayed.
                 if (userId.HasValue)
@@ -139,6 +149,8 @@ public class CategoryNewsService
 
         // 5. Final fallback: any random article, even if already seen.
         var randomFallback = await GetRandomNewsAsync(category, userId: null, minimumDate: null, onlyUnseen: false, cancellationToken);
+        if (randomFallback != null)
+            await EnsureNewsImageIfMissingAsync(randomFallback, cancellationToken);
 
         return new CategoryNewsResult
         {
@@ -147,6 +159,44 @@ public class CategoryNewsService
             AiFailed = true,
             ErrorMessage = randomFallback == null ? $"No news exists for category {category}." : "AI search failed. Showing a database fallback."
         };
+    }
+
+    private async Task EnsureNewsImageIfMissingAsync(
+        News news,
+        CancellationToken cancellationToken)
+    {
+        if (news.DetailNews != null &&
+            !string.IsNullOrWhiteSpace(news.DetailNews.ImageUrl))
+        {
+            return;
+        }
+
+        try
+        {
+            // Use a fresh RecommendationEngine scope because CategoryNewsService itself
+            // intentionally uses isolated DbContext instances.
+            using var scope = _scopeFactory.CreateScope();
+            var recommendationEngine = scope.ServiceProvider
+                .GetRequiredService<RecommendationEngine>();
+
+            var imageUrl = await recommendationEngine.EnsureNewsImageAsync(
+                news.IdNews,
+                cancellationToken);
+
+            if (!string.IsNullOrWhiteSpace(imageUrl) && news.DetailNews != null)
+                news.DetailNews.ImageUrl = imageUrl;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(
+                ex,
+                "Could not obtain an image for News {NewsId}",
+                news.IdNews);
+        }
     }
 
     private async Task<News?> GetRandomNewsAsync(string category, int? userId, DateTime? minimumDate, bool onlyUnseen, CancellationToken cancellationToken)

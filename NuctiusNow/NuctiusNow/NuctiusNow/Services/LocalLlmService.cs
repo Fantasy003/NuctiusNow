@@ -22,6 +22,7 @@ public interface ILocalLlmService
     Task<List<string?>> SummarizeBatchAsync(List<string> texts, int maxTokens = 220);
     Task<List<double?>> BatchScoreAsync(string userProfile, List<string> candidates);
     Task<List<(string Title, string Url, string Snippet)>> SearchWebAsync(string query, int maxResults = 5, CancellationToken cancellationToken = default);
+    Task<List<(string Title, string Url, string Snippet)>> SearchNewsAsync(string query, int maxResults = 5, CancellationToken cancellationToken = default);
     Task<string?> ExtractArticleBodyTextAsync(string articleUrl, CancellationToken cancellationToken = default);
 
     Task<string?> GenerateOriginalArticleAsync(
@@ -41,6 +42,7 @@ public class LocalLlmService : ILocalLlmService
     private readonly string _endpoint;
     private readonly string _chatEndpoint;
     private readonly string _webSearchPluginId;
+    private readonly string _searxngUrl;
     private readonly string? _apiToken;
     private readonly SemaphoreSlim _semaphore;
     private readonly int _maxConcurrency;
@@ -59,6 +61,7 @@ public class LocalLlmService : ILocalLlmService
         var endpointFromConfig = config.GetValue<string>("LocalLlm:Endpoint");
         var chatEndpointFromConfig = config.GetValue<string>("LocalLlm:ChatEndpoint");
         _webSearchPluginId = config.GetValue<string>("LocalLlm:WebSearchPluginId") ?? "rzk/searxng-search";
+        _searxngUrl = (config.GetValue<string>("LocalLlm:SearXngUrl") ?? "http://localhost:8081").TrimEnd('/');
         _apiToken = config.GetValue<string>("LocalLlm:ApiToken");
         if (string.IsNullOrWhiteSpace(endpointFromConfig))
         {
@@ -353,6 +356,297 @@ SEARCH TASK:
         return results;
     }
 
+    /// <summary>
+    /// Searches SearXNG's dedicated News category directly. This is intentionally
+    /// separate from SearchWebAsync so recommendation/article selection cannot drift
+    /// into arbitrary pages such as product landing pages, downloads or documentation.
+    /// The direct API uses categories=news, then applies a second application-level
+    /// article-page filter. If the local SearXNG JSON API is unavailable, the method
+    /// falls back to the LM Studio plugin with the !news syntax.
+    /// </summary>
+    public async Task<List<(string Title, string Url, string Snippet)>> SearchNewsAsync(
+        string query,
+        int maxResults = 5,
+        CancellationToken cancellationToken = default)
+    {
+        var results = new List<(string Title, string Url, string Snippet)>();
+        if (string.IsNullOrWhiteSpace(query))
+            return results;
+
+        maxResults = Math.Clamp(maxResults, 1, 20);
+
+        // Primary path: direct SearXNG News category. We deliberately search several
+        // pages/time windows so this behaves like a deep news search instead of trusting
+        // a single result page.
+        foreach (var timeRange in new[] { "month", "year" })
+        {
+            for (var page = 1; page <= 3 && results.Count < maxResults; page++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                try
+                {
+                    var pageResults = await SearchSearxngCategoryAsync(
+                        query,
+                        "news",
+                        maxResults,
+                        timeRange,
+                        page,
+                        cancellationToken);
+
+                    foreach (var item in pageResults)
+                    {
+                        if (results.Any(x => x.Url.Equals(item.Url, StringComparison.OrdinalIgnoreCase)))
+                            continue;
+
+                        results.Add(item);
+                        if (results.Count >= maxResults)
+                            break;
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(
+                        ex,
+                        "Direct SearXNG news search failed for '{Query}' (range={TimeRange}, page={Page}).",
+                        query,
+                        timeRange,
+                        page);
+                    break;
+                }
+            }
+
+            if (results.Count >= maxResults)
+                break;
+        }
+
+        if (results.Count > 0)
+        {
+            _logger.LogInformation(
+                "SearchNewsAsync: accepted {Count} article pages from SearXNG News for '{Query}'.",
+                results.Count,
+                query);
+
+            return results.Take(maxResults).ToList();
+        }
+
+        // Fallback only when the direct API is unavailable. The !news bang is passed
+        // through by the rzk plugin to SearXNG and gives the same category semantics.
+        try
+        {
+            var fallbackTask = $"""
+!news {query}
+
+STRICT REQUIREMENT: return ONLY real news/article pages about the requested topic. Reject home pages, category pages, download pages, product/marketing pages, documentation, guides, wikis, forums, account pages, search pages, stores and unrelated utility pages.
+""";
+
+            var nativeResponse = await CallWebIntegratedChatAsync(
+                fallbackTask,
+                maxTokens: 384,
+                cancellationToken: cancellationToken,
+                includePageFetchTool: false);
+
+            var searchTool = nativeResponse.ToolCalls
+                .LastOrDefault(tc => tc.Tool.EndsWith("search_web", StringComparison.OrdinalIgnoreCase));
+
+            if (searchTool != null)
+                TryParseSearchToolOutput(searchTool.Output, maxResults, results);
+
+            if (results.Count == 0 && !string.IsNullOrWhiteSpace(nativeResponse.Message))
+                TryParseSearchResultsFromText(nativeResponse.Message, maxResults, results);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "LM Studio !news fallback failed for '{Query}'", query);
+        }
+
+        return results
+            .Where(r => LooksLikeNewsArticle(r.Title, r.Url, r.Snippet))
+            .GroupBy(r => r.Url, StringComparer.OrdinalIgnoreCase)
+            .Select(g => g.First())
+            .Take(maxResults)
+            .ToList();
+    }
+
+    private async Task<List<(string Title, string Url, string Snippet)>> SearchSearxngCategoryAsync(
+        string query,
+        string category,
+        int maxResults,
+        string? timeRange,
+        int page,
+        CancellationToken cancellationToken)
+    {
+        var results = new List<(string Title, string Url, string Snippet)>();
+        if (string.IsNullOrWhiteSpace(_searxngUrl))
+            return results;
+
+        var searchParams = new List<string>
+        {
+            $"q={Uri.EscapeDataString(query.Trim())}",
+            "format=json",
+            $"categories={Uri.EscapeDataString(category)}",
+            $"pageno={Math.Max(page, 1)}",
+            "safesearch=1"
+        };
+
+        if (!string.IsNullOrWhiteSpace(timeRange))
+            searchParams.Add($"time_range={Uri.EscapeDataString(timeRange)}");
+
+        var url = $"{_searxngUrl}/search?{string.Join("&", searchParams)}";
+        var client = _httpFactory.CreateClient();
+        client.Timeout = TimeSpan.FromSeconds(30);
+
+        using var response = await client.GetAsync(url, cancellationToken);
+        var body = await response.Content.ReadAsStringAsync(cancellationToken);
+
+        if (!response.IsSuccessStatusCode)
+            throw new InvalidOperationException(
+                $"SearXNG returned HTTP {(int)response.StatusCode}: {body}");
+
+        using var document = JsonDocument.Parse(body);
+        if (!document.RootElement.TryGetProperty("results", out var resultArray) ||
+            resultArray.ValueKind != JsonValueKind.Array)
+        {
+            return results;
+        }
+
+        foreach (var item in resultArray.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.Object)
+                continue;
+
+            var title = GetJsonString(item, "title").Trim();
+            var urlValue = NormalizeUrl(GetJsonString(item, "url"));
+            var snippet = GetJsonString(item, "content");
+
+            if (string.IsNullOrWhiteSpace(snippet))
+                snippet = GetJsonString(item, "snippet");
+
+            if (!LooksLikeNewsArticle(title, urlValue, snippet))
+                continue;
+
+            if (results.Any(x => x.Url.Equals(urlValue, StringComparison.OrdinalIgnoreCase)))
+                continue;
+
+            results.Add((title, urlValue, snippet.Trim()));
+
+            if (results.Count >= maxResults)
+                break;
+        }
+
+        _logger.LogDebug(
+            "Direct SearXNG category search '{Category}' range={TimeRange} page={Page} returned {Count} article pages for '{Query}'.",
+            category,
+            timeRange,
+            page,
+            results.Count,
+            query);
+
+        return results;
+    }
+
+    private static bool LooksLikeNewsArticle(string? title, string? url, string? snippet)
+    {
+        if (string.IsNullOrWhiteSpace(url) ||
+            !Uri.TryCreate(url.Trim(), UriKind.Absolute, out var uri) ||
+            (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+        {
+            return false;
+        }
+
+        var titleText = title?.Trim() ?? string.Empty;
+        var snippetText = snippet?.Trim() ?? string.Empty;
+        var host = uri.Host.ToLowerInvariant();
+        var path = uri.AbsolutePath.ToLowerInvariant();
+
+        if (string.IsNullOrWhiteSpace(path) || path == "/")
+            return false;
+
+        // A news-category engine can still surface utility/marketing pages. Reject them
+        // before they ever reach the database.
+        var blockedHosts = new[]
+        {
+            "youtube.com", "www.youtube.com", "youtu.be",
+            "reddit.com", "www.reddit.com",
+            "facebook.com", "www.facebook.com",
+            "x.com", "www.x.com", "twitter.com", "www.twitter.com",
+            "instagram.com", "www.instagram.com",
+            "tiktok.com", "www.tiktok.com",
+            "linkedin.com", "www.linkedin.com"
+        };
+
+        if (blockedHosts.Contains(host, StringComparer.OrdinalIgnoreCase))
+            return false;
+
+        var blockedPathTokens = new[]
+        {
+            "/download", "/downloads", "/store", "/shop", "/pricing", "/support",
+            "/help", "/docs", "/documentation", "/wiki", "/forum", "/forums",
+            "/careers", "/jobs", "/login", "/signin", "/signup", "/account",
+            "/search", "/products", "/product", "/features", "/system-requirements",
+            "/contact", "/community", "/events", "/newsletter", "/subscribe"
+        };
+
+        if (blockedPathTokens.Any(token => path.Contains(token, StringComparison.OrdinalIgnoreCase)))
+            return false;
+
+        var blockedTitleTokens = new[]
+        {
+            "documentation", "wiki", "user guide", "getting started",
+            "system requirements", "pricing", "sign in", "log in", "login",
+            "register", "careers", "faq", "manual", "official website"
+        };
+
+        if (blockedTitleTokens.Any(token =>
+                titleText.Contains(token, StringComparison.OrdinalIgnoreCase)))
+        {
+            return false;
+        }
+
+        if (titleText.StartsWith("download", StringComparison.OrdinalIgnoreCase) ||
+            titleText.StartsWith("support", StringComparison.OrdinalIgnoreCase) ||
+            titleText.StartsWith("store", StringComparison.OrdinalIgnoreCase) ||
+            titleText.StartsWith("shop", StringComparison.OrdinalIgnoreCase) ||
+            titleText.StartsWith("jobs", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        // Specific example reported during testing: Bungie's Destiny New Light page is
+        // a product/download landing page, not a news article.
+        if (host.Equals("bungie.net", StringComparison.OrdinalIgnoreCase) &&
+            path.StartsWith("/7/en/destiny/", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        // Avoid obvious generic category/home/portal destinations even when they carry a
+        // description. A story URL should normally contain at least one meaningful segment.
+        var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (segments.Length == 0)
+            return false;
+
+        var genericLastSegments = new[]
+        {
+            "news", "latest", "home", "index", "default", "all", "topics", "category"
+        };
+
+        if (segments.Length == 1 &&
+            genericLastSegments.Contains(segments[0], StringComparer.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        // A genuine search result should carry both a meaningful title and a description.
+        return titleText.Length >= 10 && snippetText.Length >= 30;
+    }
+
     public async Task<string?> SearchImageUrlAsync(
         string query,
         CancellationToken cancellationToken = default)
@@ -360,21 +654,43 @@ SEARCH TASK:
         if (string.IsNullOrWhiteSpace(query))
             return null;
 
+        // Preferred path: ask SearXNG directly for image results so we can read img_src.
+        // The rzk plugin currently discards img_src from SearXNG's image result schema,
+        // so using the API directly is the reliable way to obtain the actual image URL.
+        try
+        {
+            var imageUrl = await SearchSearxngImageUrlAsync(query, cancellationToken);
+            if (IsUsableImageUrl(imageUrl))
+                return imageUrl!.Trim();
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "Direct SearXNG image search failed for '{Query}'. Falling back to LM Studio.",
+                query);
+        }
+
+        // Fallback for installations where the app cannot directly reach SearXNG.
         var prompt = $$$"""
-You are an image-search assistant for a news website.
+You are NuctiusNow's image-search assistant.
 
 MANDATORY: use the available search_web tool EXACTLY ONCE before answering.
 
-Find ONE relevant direct image URL for this news topic:
-{{{query}}}
+Search this topic in the SearXNG Images category using the !images search modifier:
+!images {{{query}}}
 
-Prefer an editorial photograph or a reusable image from a reputable source.
-Do NOT return an article URL, a search page, Markdown, or explanations.
-
+Find ONE relevant editorial/news photograph.
+Do NOT return an article page, product page, download page, search page, thumbnail page,
+or an explanation.
 Return ONLY JSON:
 {{"imageUrl":"https://example.com/image.jpg"}}
 
-If no suitable image is found:
+If no direct image URL is available:
 {{"imageUrl":""}}
 """;
 
@@ -402,7 +718,7 @@ If no suitable image is found:
                 if (json.RootElement.TryGetProperty("imageUrl", out var imageUrlProperty))
                 {
                     var imageUrl = imageUrlProperty.GetString();
-                    if (IsUsableImageUrl(imageUrl))
+                    if (IsUsableImageUrlFromModel(imageUrl))
                         return imageUrl!.Trim();
                 }
             }
@@ -418,7 +734,7 @@ If no suitable image is found:
                 .Select(m => m.Value.Trim())
                 .Distinct())
             {
-                if (IsUsableImageUrl(url))
+                if (IsUsableImageUrlFromModel(url))
                     return url;
             }
         }
@@ -434,11 +750,79 @@ If no suitable image is found:
         return null;
     }
 
+    private async Task<string?> SearchSearxngImageUrlAsync(
+        string query,
+        CancellationToken cancellationToken)
+    {
+        var searchParams = new[]
+        {
+            $"q={Uri.EscapeDataString(query.Trim())}",
+            "format=json",
+            "categories=images",
+            "pageno=1",
+            "safesearch=1"
+        };
+
+        var url = $"{_searxngUrl}/search?{string.Join("&", searchParams)}";
+        var client = _httpFactory.CreateClient();
+        client.Timeout = TimeSpan.FromSeconds(30);
+
+        using var response = await client.GetAsync(url, cancellationToken);
+        var body = await response.Content.ReadAsStringAsync(cancellationToken);
+
+        if (!response.IsSuccessStatusCode)
+            throw new InvalidOperationException(
+                $"SearXNG returned HTTP {(int)response.StatusCode}: {body}");
+
+        using var document = JsonDocument.Parse(body);
+        if (!document.RootElement.TryGetProperty("results", out var resultArray) ||
+            resultArray.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        foreach (var item in resultArray.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.Object)
+                continue;
+
+            // SearXNG image results expose img_src / thumbnail_src in addition to url.
+            // img_src is the actual image; url is generally the landing page.
+            var direct = GetJsonString(item, "img_src");
+
+            if (!IsUsableImageUrl(direct))
+                direct = GetJsonString(item, "thumbnail_src");
+
+            if (!IsUsableImageUrl(direct) &&
+                item.TryGetProperty("formats", out var formats) &&
+                formats.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var format in formats.EnumerateArray())
+                {
+                    if (format.ValueKind != JsonValueKind.Object)
+                        continue;
+
+                    var formatUrl = GetJsonString(format, "url");
+                    if (IsUsableImageUrl(formatUrl))
+                    {
+                        direct = formatUrl;
+                        break;
+                    }
+                }
+            }
+
+            if (IsUsableImageUrl(direct))
+                return direct.Trim();
+        }
+
+        return null;
+    }
+
     public async Task<string?> GenerateOriginalArticleAsync(
-    string title,
-    string evidence,
-    string? category = null,
-    CancellationToken cancellationToken = default)
+        string title,
+        string evidence,
+        string? category = null,
+        CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(title) ||
             string.IsNullOrWhiteSpace(evidence))
@@ -450,14 +834,14 @@ If no suitable image is found:
             ? "General"
             : category.Trim();
 
+        // The evidence passed here comes from the application's News-category search
+        // and article-body extraction. The model's job is synthesis, not web browsing.
         var prompt = $"""
-You are NuctiusNow's original news article writer.
+You are the senior writer for NuctiusNow.
 
-Write one complete, original news article based ONLY on the factual
-evidence supplied below.
-
-The original publisher's article may be inaccessible.
-Do NOT pretend that you accessed it.
+Write ONE original, factual news article about the story identified by the title below.
+The supplied evidence contains text obtained from real news/article pages found through
+a dedicated News-category web search. Use that evidence as the factual record.
 
 TITLE:
 {title}
@@ -465,60 +849,35 @@ TITLE:
 CATEGORY:
 {categoryText}
 
-EVIDENCE:
+VERIFIED NEWS EVIDENCE:
 {evidence}
 
-STRICT RULES:
+WRITING REQUIREMENTS:
+- Produce one complete article, not a summary and not a list.
+- Use a clear news structure: lead, relevant developments, context, and closing paragraph.
+- Write 600 to 1000 words when the evidence supports that level of detail.
+- Use 6 to 10 substantive paragraphs.
+- Every paragraph must add new information.
+- Combine corroborated facts from the evidence into a coherent narrative.
+- Use original wording; do not copy sentences from the evidence.
+- Do not invent names, dates, numbers, quotes, motives, causes or events.
+- Never create a direct quotation unless that quotation is explicitly present in the evidence.
+- Do not mention the evidence, the web search, SearXNG, the AI, the model, prompts, or article-generation process.
+- Do not discuss whether the original publisher was accessible.
+- Do not refuse the task merely because one source is incomplete. Use the factual material that is actually present.
+- Only return an insufficiency marker when the supplied evidence contains no usable factual material for an article.
+- Return ONLY the article body.
+- Plain text only: no Markdown, no HTML, no JSON, no headings such as "Article" or "Summary", and no preamble.
 
-- Write exactly ONE article.
-- The article must have one continuous logical progression from introduction
-  to development to conclusion.
-- Do NOT restart the article after completing a section.
-- Do NOT repeat the introduction.
-- Do NOT repeat the conclusion.
-- Do NOT repeat paragraphs.
-- Do NOT repeat sections using different wording.
-- Every paragraph must add new information or develop the previous point.
-- Once a fact has been explained, do not explain the same fact again unless
-  additional information is genuinely introduced.
-- Do NOT produce multiple versions of the same article.
-- Do NOT produce a summary followed by the same article.
-- Do NOT produce an article followed by another article.
-- Do NOT copy or reproduce wording from any source.
-- Do NOT attempt to reconstruct inaccessible publisher text verbatim.
-- Use only facts supported by the supplied evidence.
-- Do NOT invent names, dates, numbers, events, quotes, places, statistics,
-  causes, motives, or other information not supported by the evidence.
-- Do NOT fabricate direct quotations.
-- Prefer original journalistic wording.
-- Do NOT mention the evidence, sources, prompt, model, or generation process.
-- Do NOT mention that the original article was inaccessible.
-- Do NOT write bullet points.
-- Do NOT write a short summary.
-- Do NOT create a separate "context" section.
-- Write approximately 700 to 1200 words when the evidence supports that
-  amount of detail.
-- Write in the same language as the title and evidence.
-- Before returning the article, silently check that no paragraph or section
-  is repeated.
-- Return ONLY the final article body.
-- No Markdown.
-- No HTML.
-- No JSON.
-- No preamble.
-- No explanation.
-
-If the supplied evidence is insufficient to write one factual article,
-return exactly:
-
+If the evidence truly contains no usable facts, return exactly:
 [INSUFFICIENT_EVIDENCE]
 """;
 
         var payload = new Dictionary<string, object?>
         {
             ["prompt"] = prompt,
-            ["max_tokens"] = 2200,
-            ["temperature"] = 0.1
+            ["max_tokens"] = 1800,
+            ["temperature"] = 0.15
         };
 
         payload["model"] = await ResolveLoadedModelKeyAsync(cancellationToken);
@@ -541,13 +900,10 @@ return exactly:
                 _logger.LogWarning(
                     "GenerateOriginalArticleAsync: LLM returned HTTP {StatusCode}",
                     (int)response.StatusCode);
-
                 return null;
             }
 
-            var article =
-                (await ParseResponseTextAsync(response.Content) ?? string.Empty)
-                .Trim();
+            var article = (await ParseResponseTextAsync(response.Content) ?? string.Empty).Trim();
 
             var fenced = Regex.Match(
                 article,
@@ -557,24 +913,28 @@ return exactly:
             if (fenced.Success)
                 article = fenced.Groups[1].Value.Trim();
 
-            if (article.Equals(
-                    "[INSUFFICIENT_EVIDENCE]",
-                    StringComparison.OrdinalIgnoreCase))
+            if (article.Equals("[INSUFFICIENT_EVIDENCE]", StringComparison.OrdinalIgnoreCase))
             {
                 _logger.LogWarning(
-                    "GenerateOriginalArticleAsync: insufficient evidence for '{Title}'",
+                    "GenerateOriginalArticleAsync: model reported insufficient evidence for '{Title}'",
                     title);
-
                 return null;
             }
 
-            if (article.Length < 500)
+            if (ContainsArticleRefusal(article))
+            {
+                _logger.LogWarning(
+                    "GenerateOriginalArticleAsync: model returned a refusal/non-article response for '{Title}'",
+                    title);
+                return null;
+            }
+
+            if (article.Length < 900)
             {
                 _logger.LogWarning(
                     "GenerateOriginalArticleAsync: generated article was too short ({Length} chars) for '{Title}'",
                     article.Length,
                     title);
-
                 return null;
             }
 
@@ -585,8 +945,7 @@ return exactly:
 
             return article;
         }
-        catch (OperationCanceledException) when (
-            cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             throw;
         }
@@ -596,13 +955,66 @@ return exactly:
                 ex,
                 "GenerateOriginalArticleAsync failed for '{Title}'",
                 title);
-
             return null;
         }
         finally
         {
             _semaphore.Release();
         }
+    }
+
+    private static bool ContainsArticleRefusal(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return true;
+
+        var normalized = text.Trim();
+
+        var refusalPrefixes = new[]
+        {
+            "i can't provide",
+            "i cannot provide",
+            "i can't write",
+            "i cannot write",
+            "i'm unable to",
+            "i am unable to",
+            "unable to provide",
+            "unable to write",
+            "cannot create an article",
+            "can't create an article",
+            "i don't have enough information",
+            "i do not have enough information"
+        };
+
+        return refusalPrefixes.Any(p => normalized.StartsWith(p, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool IsUsableImageUrlFromModel(string? url)
+    {
+        if (!IsUsableImageUrl(url))
+            return false;
+
+        if (!Uri.TryCreate(url!.Trim(), UriKind.Absolute, out var uri))
+            return false;
+
+        var path = uri.AbsolutePath.ToLowerInvariant();
+        var query = uri.Query.ToLowerInvariant();
+
+        var imageExtensions = new[]
+        { ".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif" };
+
+        if (imageExtensions.Any(ext => path.EndsWith(ext, StringComparison.OrdinalIgnoreCase)))
+            return true;
+
+        return path.Contains("/images/", StringComparison.OrdinalIgnoreCase) ||
+               path.Contains("/image/", StringComparison.OrdinalIgnoreCase) ||
+               path.Contains("/media/", StringComparison.OrdinalIgnoreCase) ||
+               query.Contains("format=jpg", StringComparison.OrdinalIgnoreCase) ||
+               query.Contains("format=jpeg", StringComparison.OrdinalIgnoreCase) ||
+               query.Contains("format=png", StringComparison.OrdinalIgnoreCase) ||
+               query.Contains("fm=jpg", StringComparison.OrdinalIgnoreCase) ||
+               query.Contains("fm=jpeg", StringComparison.OrdinalIgnoreCase) ||
+               query.Contains("fm=png", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsUsableImageUrl(string? url)
@@ -628,16 +1040,15 @@ return exactly:
 
         var imageExtensions = new[]
         {
-        ".jpg",
-        ".jpeg",
-        ".png",
-        ".webp",
-        ".gif",
-        ".avif"
-    };
+            ".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif", ".svg"
+        };
 
-        return imageExtensions.Any(
-            extension => path.EndsWith(extension));
+        if (imageExtensions.Any(extension => path.EndsWith(extension, StringComparison.OrdinalIgnoreCase)))
+            return true;
+
+        // Many image CDNs use extensionless URLs. SearXNG's img_src field already
+        // identifies these as image results, so accept an extensionless HTTPS URL here.
+        return uri.Scheme == Uri.UriSchemeHttps && path.Length > 1;
     }
     /// <summary>
     /// Uses the LLM web-search plugin to open a specific article URL and extract

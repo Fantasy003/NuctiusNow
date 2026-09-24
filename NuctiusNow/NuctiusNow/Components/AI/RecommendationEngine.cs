@@ -88,7 +88,7 @@ public class RecommendationEngine
             List<(string Title, string Url, string Snippet)> results = new();
             try
             {
-                results = await llm.SearchWebAsync(query, 1);
+                results = await llm.SearchNewsAsync($"{query} latest current news", 1);
                 _logger?.LogInformation("STEP 2: Search returned {Count} results for query '{Query}'", results.Count, query);
             }
             catch (Exception ex)
@@ -193,7 +193,7 @@ public class RecommendationEngine
             List<(string Title, string Url, string Snippet)> results = new();
             try
             {
-                results = await llm.SearchWebAsync(query, perPref);
+                results = await llm.SearchNewsAsync($"{query} latest current news", perPref);
                 _logger?.LogInformation("SearchAndIngestForUserAsync: search '{Query}' returned {Count}", query, results.Count);
             }
             catch (Exception ex)
@@ -260,7 +260,7 @@ public class RecommendationEngine
                 {
                     var topic = pref?.Tag?.Name ?? pref?.IdTag.ToString() ?? "News";
                     var query = $"{topic} news";
-                    var searchResults = await llm.SearchWebAsync(query, 5);
+                    var searchResults = await llm.SearchNewsAsync($"{query} latest current news", 5);
                     try
                     {
                         _logger?.LogInformation("Search for '{Query}' returned {Count} results", query, searchResults.Count);
@@ -682,14 +682,14 @@ public class RecommendationEngine
 
         for (var attempt = 1; attempt <= 3; attempt++)
         {
-            var searchTask = BuildCategorySearchTask(
+            var searchQuery = BuildCategorySearchTask(
                 mapping.Category,
                 mapping.SearchQuery,
                 ignoreOneYearRestriction,
                 attempt > 1);
 
-            var results = await llm.SearchWebAsync(
-                searchTask,
+            var results = await llm.SearchNewsAsync(
+                searchQuery,
                 maxResults: 10,
                 cancellationToken: cancellationToken);
 
@@ -731,6 +731,20 @@ public class RecommendationEngine
                     imageUrl: null,
                     additionalSourcesJson: null);
 
+                // Once the article is selected, immediately search SearXNG Images
+                // for a direct editorial image so Home can display it without waiting
+                // for NewsDetails.
+                try
+                {
+                    await EnsureNewsImageAsync(news.IdNews, cancellationToken);
+                }
+                catch (Exception imageEx)
+                {
+                    _logger?.LogWarning(imageEx,
+                        "Could not obtain image for category news {NewsId}",
+                        news.IdNews);
+                }
+
                 return await _context.News
                     .Include(n => n.Tag)
                     .Include(n => n.DetailNews)
@@ -751,27 +765,22 @@ public class RecommendationEngine
         bool ignoreOneYearRestriction,
         bool retry)
     {
-        var sb = new StringBuilder();
-        sb.AppendLine("Search the public internet for current news related to this broad category.");
-        sb.AppendLine("The category is a semantic domain, not the literal search phrase. Infer concrete people, companies, events, organizations, issues, products, places and topics that belong to it, then use those associations to form the search.");
-        sb.AppendLine("Examples:");
-        sb.AppendLine("- Politics: governments, presidents, leaders, elections, legislation, diplomacy, public policy.");
-        sb.AppendLine("- Technology: AI, NVIDIA, semiconductors, software, cybersecurity, devices, major technology companies.");
-        sb.AppendLine("- Health: cancer, medicine, treatments, research, hospitals, public health, diseases.");
-        sb.AppendLine("- Sports: soccer, athletics, basketball, tennis, motorsport, competitions and athletes.");
-        sb.AppendLine("- Business: companies, markets, finance, products, trade, investment and economic activity.");
-        sb.AppendLine("- Entertainment: film, television, music, gaming, streaming, celebrities and cultural events.");
-        sb.AppendLine();
-        sb.AppendLine($"CATEGORY: {category}");
-        sb.AppendLine($"STARTING SEARCH CONCEPT: {baseSearchQuery}");
-        if (!ignoreOneYearRestriction)
-            sb.AppendLine("Prefer stories from the last 12 months and prioritize recent/current reporting.");
-        else
-            sb.AppendLine("Prioritize recent/current reporting, without a strict one-year restriction.");
-        if (retry)
-            sb.AppendLine("Find a different story than previous attempts; prefer a different publisher when possible.");
-        sb.AppendLine("Use the search_web tool exactly once. Return the real results from that tool. Do not invent, summarize, retry, or create a second JSON object.");
-        return sb.ToString();
+        var query = string.IsNullOrWhiteSpace(baseSearchQuery)
+            ? category
+            : baseSearchQuery.Trim();
+
+        // SearchNewsAsync sends this concise query to SearXNG's dedicated News
+        // category. Keeping the query short is intentional: the category itself
+        // supplies the semantic restriction, while SearXNG supplies real news pages.
+        var suffix = ignoreOneYearRestriction
+            ? " latest current news"
+            : " latest current news";
+
+        var retrySuffix = retry
+            ? " different story"
+            : string.Empty;
+
+        return $"{query} {category}{suffix}{retrySuffix}".Trim();
     }
 
     /// <summary>
@@ -905,28 +914,16 @@ public class RecommendationEngine
 
         for (var attempt = 1; attempt <= 2; attempt++)
         {
-            var task = $"""
-You are NuctiusNow's personalized news search agent.
+            // Search the dedicated News category instead of the generic web category.
+            // The preference is intentionally kept as the core query; the existing
+            // personalization context still influences which preferences are searched
+            // first through their learned weight and interaction ordering.
+            var searchQuery = attempt == 1
+                ? $"{preferenceName} latest current news"
+                : $"{preferenceName} latest current news different story";
 
-The user has an explicit preference for: {preferenceName}
-
-Use the user's complete preference and interaction history below to infer WHICH CURRENT
-ANGLE of this preference is most relevant to this person. You may connect the preference
-to companies, products, people, sports, diseases, technologies, events or related topics.
-Do not simply search the preference word; reason about likely current interests first.
-Then use the search_web tool to find current public-internet news about that angle.
-
-USER CONTEXT:
-{personalizationContext}
-
-Search exactly for ONE strong current news story for this preference.
-Prefer a distinct article and publisher. Do not use or repeat articles already stored
-in NuctiusNow. Do not invent URLs. Return the actual search tool results; NuctiusNow
-will read the tool output directly.
-""";
-
-            var results = await _llmService.SearchWebAsync(
-                task,
+            var results = await _llmService.SearchNewsAsync(
+                searchQuery,
                 maxResults: 6,
                 cancellationToken: cancellationToken);
 
@@ -970,6 +967,18 @@ will read the tool output directly.
                 blockedUrls.Add(candidate.Url);
                 if (!string.IsNullOrWhiteSpace(candidate.Title))
                     blockedTitles.Add(NormalizeTitle(candidate.Title));
+
+                // Find and persist a direct image immediately after selecting the article.
+                try
+                {
+                    await EnsureNewsImageAsync(news.IdNews, cancellationToken);
+                }
+                catch (Exception imageEx)
+                {
+                    _logger?.LogWarning(imageEx,
+                        "Could not obtain personalized image for News {NewsId}",
+                        news.IdNews);
+                }
 
                 return new PersonalizedRecommendation(
                     await _context.News
@@ -1477,77 +1486,253 @@ will read the tool output directly.
         var sources = existingResults?.ToList()
             ?? new List<(string Title, string Url, string Snippet)>();
 
+        // Article generation needs factual material, not only search-result snippets.
+        // If no existing search results were supplied, perform one additional
+        // News-category search to gather independent sources.
         if (sources.Count == 0 && _llmService != null)
         {
             var query = string.IsNullOrWhiteSpace(category)
-                ? $"{title} current news"
-                : $"{title} {category} current news";
+                ? $"{title} latest current news"
+                : $"{title} {category} latest current news";
 
             try
             {
-                sources = await _llmService.SearchWebAsync(
+                sources = await _llmService.SearchNewsAsync(
                     query,
                     8,
                     cancellationToken);
             }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
             catch (Exception ex)
             {
-                _logger?.LogWarning(ex, "Could not gather fallback evidence for '{Title}'", title);
+                _logger?.LogWarning(
+                    ex,
+                    "Could not gather fallback news evidence for '{Title}'",
+                    title);
             }
         }
 
         var originalHost = string.Empty;
-        if (Uri.TryCreate(sourceUrl, UriKind.Absolute, out var originalUri))
+
+        if (Uri.TryCreate(
+                sourceUrl,
+                UriKind.Absolute,
+                out var originalUri))
+        {
             originalHost = originalUri.Host;
+        }
 
         var evidenceBlocks = new List<string>();
-        if (!string.IsNullOrWhiteSpace(originalSnippet))
-            evidenceBlocks.Add($"ORIGINAL SEARCH SNIPPET:\n{originalSnippet.Trim()}");
 
+        // ---------------------------------------------------------
+        // Initial search context
+        // ---------------------------------------------------------
+        if (!string.IsNullOrWhiteSpace(originalSnippet))
+        {
+            evidenceBlocks.Add($"""
+INITIAL SEARCH CONTEXT:
+{originalSnippet.Trim()}
+""");
+        }
+
+        // ---------------------------------------------------------
+        // Primary source
+        // ---------------------------------------------------------
+        if (_llmService != null &&
+            Uri.TryCreate(
+                sourceUrl,
+                UriKind.Absolute,
+                out var primaryUri) &&
+            !ArticleExtractionService.IsKnownNonArticlePage(primaryUri))
+        {
+            try
+            {
+                var primaryBody =
+                    await _llmService.ExtractArticleBodyTextAsync(
+                        sourceUrl,
+                        cancellationToken);
+
+                if (!string.IsNullOrWhiteSpace(primaryBody) &&
+                    primaryBody.Length >= 400)
+                {
+                    var boundedPrimary = primaryBody.Trim();
+
+                    if (boundedPrimary.Length > 6500)
+                        boundedPrimary = boundedPrimary[..6500];
+
+                    evidenceBlocks.Add($"""
+PRIMARY VERIFIED NEWS SOURCE:
+Title: {title}
+URL: {sourceUrl}
+Article text:
+{boundedPrimary}
+""");
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogDebug(
+                    ex,
+                    "Could not extract the primary article body from {Url}",
+                    sourceUrl);
+            }
+        }
+
+        // ---------------------------------------------------------
+        // Additional independent sources
+        // ---------------------------------------------------------
         var additionalSources = new List<ArticleSource>();
-        var usedHosts = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        var usedHosts =
+            new HashSet<string>(
+                StringComparer.OrdinalIgnoreCase);
 
         foreach (var result in sources)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var normalizedUrl = NormalizeUrl(result.Url);
-            if (string.IsNullOrWhiteSpace(normalizedUrl) ||
-                string.IsNullOrWhiteSpace(result.Snippet))
+            var normalizedUrl =
+                NormalizeUrl(result.Url);
+
+            if (string.IsNullOrWhiteSpace(normalizedUrl))
                 continue;
 
-            if (normalizedUrl.Equals(sourceUrl, StringComparison.OrdinalIgnoreCase))
+            if (!Uri.TryCreate(
+                    normalizedUrl,
+                    UriKind.Absolute,
+                    out var resultUri))
+            {
                 continue;
+            }
 
-            string host = string.Empty;
-            if (Uri.TryCreate(normalizedUrl, UriKind.Absolute, out var resultUri))
-                host = resultUri.Host;
+            if (!string.Equals(
+                    resultUri.Scheme,
+                    Uri.UriSchemeHttp,
+                    StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(
+                    resultUri.Scheme,
+                    Uri.UriSchemeHttps,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
 
+            // Do not use the original article again.
+            if (string.Equals(
+                    normalizedUrl,
+                    NormalizeUrl(sourceUrl),
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var host = resultUri.Host;
+
+            // Do not use another URL from the same publisher as the original source.
             if (!string.IsNullOrWhiteSpace(originalHost) &&
-                host.Equals(originalHost, StringComparison.OrdinalIgnoreCase))
+                string.Equals(
+                    host,
+                    originalHost,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            // Only one source per publisher.
+            if (!usedHosts.Add(host))
                 continue;
 
-            if (!string.IsNullOrWhiteSpace(host) && !usedHosts.Add(host))
+            string? articleBody = null;
+
+            try
+            {
+                articleBody =
+                    await _llmService!.ExtractArticleBodyTextAsync(
+                        normalizedUrl,
+                        cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogDebug(
+                    ex,
+                    "Could not extract article body from evidence source {Url}",
+                    normalizedUrl);
+            }
+
+            // -----------------------------------------------------
+            // Prefer verified article text
+            // -----------------------------------------------------
+            var usableBody =
+                !string.IsNullOrWhiteSpace(articleBody) &&
+                articleBody.Length >= 400
+                    ? articleBody.Trim()
+                    : null;
+
+            if (usableBody != null)
+            {
+                if (usableBody.Length > 6500)
+                    usableBody = usableBody[..6500];
+
+                evidenceBlocks.Add($"""
+VERIFIED NEWS SOURCE:
+Title: {result.Title}
+URL: {normalizedUrl}
+Article text:
+{usableBody}
+""");
+            }
+            // -----------------------------------------------------
+            // Otherwise use the search-result snippet
+            // -----------------------------------------------------
+            else if (!string.IsNullOrWhiteSpace(result.Snippet))
+            {
+                var snippet = result.Snippet.Trim();
+
+                if (snippet.Length > 1800)
+                    snippet = snippet[..1800];
+
+                evidenceBlocks.Add($"""
+NEWS SOURCE SUMMARY:
+Title: {result.Title}
+URL: {normalizedUrl}
+Snippet: {snippet}
+""");
+            }
+            else
+            {
                 continue;
+            }
 
-            var snippet = result.Snippet.Trim();
-            if (snippet.Length > 1600)
-                snippet = snippet[..1600];
+            additionalSources.Add(
+                new ArticleSource(
+                    string.IsNullOrWhiteSpace(result.Title)
+                        ? host
+                        : result.Title.Trim(),
+                    normalizedUrl,
+                    GetSourceOwner(normalizedUrl)));
 
-            evidenceBlocks.Add(
-                $"SOURCE:\nTitle: {result.Title}\nURL: {normalizedUrl}\nSnippet: {snippet}");
-
-            additionalSources.Add(new ArticleSource(
-                result.Title?.Trim() ?? host,
-                normalizedUrl,
-                GetSourceOwner(normalizedUrl)));
-
-            if (additionalSources.Count >= 6)
+            // Four independent publishers are enough for generation.
+            if (additionalSources.Count >= 4)
                 break;
         }
 
+        var evidenceText = string.Join(
+            "\n\n==============================\n\n",
+            evidenceBlocks);
+
         return new ArticleEvidence(
-            string.Join("\n\n------------------------------\n\n", evidenceBlocks),
+            evidenceText,
             additionalSources);
     }
 
@@ -1609,7 +1794,7 @@ will read the tool output directly.
                 searchResults,
                 cancellationToken);
 
-            if (evidence.Text.Length >= 500)
+            if ((evidence.Sources.Count >= 1 || evidence.Text.Contains("PRIMARY VERIFIED NEWS SOURCE", StringComparison.OrdinalIgnoreCase)) && evidence.Text.Length >= 700)
             {
                 var generated = await _llmService.GenerateOriginalArticleAsync(
                     title,
@@ -1732,6 +1917,17 @@ will read the tool output directly.
             return null;
         }
 
+        if (Uri.TryCreate(news.Hyperlink.Trim(), UriKind.Absolute, out var newsUri) &&
+            ArticleExtractionService.IsKnownNonArticlePage(newsUri))
+        {
+            _logger?.LogWarning(
+                "News {NewsId} points to a known non-article page: {Url}",
+                newsId,
+                news.Hyperlink);
+
+            return null;
+        }
+
         var title =
             string.IsNullOrWhiteSpace(detail.Keyword)
                 ? "News article"
@@ -1764,14 +1960,15 @@ will read the tool output directly.
                 existingResults: null,
                 cancellationToken);
 
-            if (string.IsNullOrWhiteSpace(evidence.Text) ||
-                evidence.Text.Length < 500)
+            if ((!evidence.Text.Contains("PRIMARY VERIFIED NEWS SOURCE", StringComparison.OrdinalIgnoreCase) && evidence.Sources.Count < 1) ||
+                string.IsNullOrWhiteSpace(evidence.Text) ||
+                evidence.Text.Length < 700)
             {
                 _logger?.LogWarning(
                     "Insufficient evidence to generate AI article for News {NewsId}",
                     newsId);
 
-                detail.BodySource = "Unavailable";
+                detail.BodySource = "Unknown";
                 detail.FullBodyText = null;
 
                 await _context.SaveChangesAsync(cancellationToken);
@@ -1792,7 +1989,7 @@ will read the tool output directly.
                     "LLM could not generate article for News {NewsId}",
                     newsId);
 
-                detail.BodySource = "Unavailable";
+                detail.BodySource = "Unknown";
                 detail.FullBodyText = null;
 
                 await _context.SaveChangesAsync(cancellationToken);

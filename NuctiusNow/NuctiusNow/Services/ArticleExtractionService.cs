@@ -1,4 +1,4 @@
-﻿using Microsoft.Playwright;
+using Microsoft.Playwright;
 using SmartReader;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -613,6 +613,40 @@ public sealed class ArticleExtractionService : IAsyncDisposable
             return true;
         }
 
+        // Common non-editorial destinations should never be treated as article pages.
+        var blockedHosts = new[]
+        {
+            "youtube.com", "www.youtube.com", "youtu.be",
+            "reddit.com", "www.reddit.com",
+            "facebook.com", "www.facebook.com",
+            "x.com", "www.x.com", "twitter.com", "www.twitter.com",
+            "instagram.com", "www.instagram.com",
+            "tiktok.com", "www.tiktok.com",
+            "linkedin.com", "www.linkedin.com"
+        };
+
+        if (blockedHosts.Contains(host, StringComparer.OrdinalIgnoreCase))
+            return true;
+
+        var blockedPathTokens = new[]
+        {
+            "/download", "/downloads", "/store", "/shop", "/pricing", "/support",
+            "/help", "/docs", "/documentation", "/wiki", "/forum", "/forums",
+            "/careers", "/jobs", "/login", "/signin", "/signup", "/account",
+            "/search", "/products", "/product", "/features", "/system-requirements",
+            "/contact", "/community", "/events", "/newsletter", "/subscribe"
+        };
+
+        if (blockedPathTokens.Any(token => path.Contains(token, StringComparison.OrdinalIgnoreCase)))
+            return true;
+
+        // Specific project example: Bungie's Destiny New Light landing/download page.
+        if (host.Equals("bungie.net", StringComparison.OrdinalIgnoreCase) &&
+            path.StartsWith("/7/en/destiny/", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
         return false;
     }
 
@@ -864,3 +898,4 @@ public sealed class ArticleExtractionService : IAsyncDisposable
             !string.IsNullOrWhiteSpace(Text);
     }
 }
+

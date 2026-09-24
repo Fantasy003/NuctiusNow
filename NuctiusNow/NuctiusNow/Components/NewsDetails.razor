@@ -214,7 +214,23 @@ else
 
         if (currentNews != null)
         {
-            heroImageUrl = currentNews.DetailNews?.ImageUrl ?? ExtractImageUrl(currentNews.DetailNews?.Context);
+            heroImageUrl = currentNews.DetailNews?.ImageUrl
+                ?? ExtractImageUrl(currentNews.DetailNews?.Context);
+
+            // Older stories may not have an image saved. Search SearXNG's Images
+            // category after the story has been selected and persist the direct URL.
+            if (string.IsNullOrWhiteSpace(heroImageUrl))
+            {
+                try
+                {
+                    heroImageUrl = await recommendationEngine.EnsureNewsImageAsync(Id);
+                }
+                catch (Exception imageEx)
+                {
+                    Console.Error.WriteLine($"News image search failed for news {Id}: {imageEx}");
+                }
+            }
+
             LoadAdditionalSources();
 
             if (currentNews.DetailNews != null &&
@@ -258,6 +274,12 @@ else
                     LoadAdditionalSources();
                 }
             }
+
+            // Generation/reloading can return a record with an image that was just
+            // persisted. Refresh the hero URL before rendering the rest of the page.
+            heroImageUrl = currentNews?.DetailNews?.ImageUrl
+                ?? heroImageUrl
+                ?? ExtractImageUrl(currentNews?.DetailNews?.Context);
 
             comments = await recommendationEngine.GetCommentsForNewsAsync(Id);
         }
@@ -462,3 +484,4 @@ else
         public string Owner { get; set; } = "Source";
     }
 }
+
