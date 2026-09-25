@@ -3,8 +3,8 @@
 
 @using System.Diagnostics
 @using System.Text.Json
-@using System.Text.RegularExpressions
 @using Microsoft.EntityFrameworkCore
+@using Microsoft.JSInterop
 @using NuctiusNow.Data
 @using NuctiusNow.Services
 @using NuctiusNow.Components.User_Related
@@ -33,7 +33,9 @@ else
     <div class="news-detail-page">
         <div class="back-nav">
             <button class="btn-back" @onclick="GoBack">
-                <svg viewBox="0 0 24 24" style="width:20px;height:20px;fill:currentColor;"><path d="M20 11H7.83l5.59-5.59L12 4l8 8-8 8 1.41 1.41L7.83 13H20v-2z" /></svg>
+                <svg viewBox="0 0 24 24" style="width:20px;height:20px;fill:currentColor;">
+                    <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z" />
+                </svg>
                 Back
             </button>
         </div>
@@ -57,7 +59,7 @@ else
                     </a>
                 }
             </div>
-
+            <br/>
             <div class="detail-content-layout">
                 @if (!string.IsNullOrWhiteSpace(heroImageUrl))
                 {
@@ -67,7 +69,14 @@ else
                 <div class="detail-text">
                     <section class="summary-section detail-reading-section">
                         <div class="detail-section-label">AI SUMMARY</div>
-                        <p>@(currentNews.DetailNews?.AiSummary ?? currentNews.DetailNews?.Context ?? "No summary available.")</p>
+                        @if (!string.IsNullOrWhiteSpace(currentNews.DetailNews?.AiSummary))
+                        {
+                            <p>@currentNews.DetailNews.AiSummary</p>
+                        }
+                        else
+                        {
+                            <p><i>The AI summary is not available right now.</i></p>
+                        }
                     </section>
 
                     <section class="full-article-section detail-reading-section">
@@ -76,10 +85,11 @@ else
                         {
                             <div class="article-loading-state">
                                 <div class="loading-spinner"></div>
-                                <p>The AI is assembling this article from multiple web sources…</p>
+                                <p>The AI is reading the available news sources and writing an original explanation…</p>
                             </div>
                         }
-                        else if (!string.IsNullOrWhiteSpace(currentNews.DetailNews?.FullBodyText))
+                        else if (currentNews.DetailNews?.BodySource == "AiGenerated" &&
+                                 !string.IsNullOrWhiteSpace(currentNews.DetailNews.FullBodyText))
                         {
                             <div class="full-article-body">@currentNews.DetailNews.FullBodyText</div>
                         }
@@ -97,16 +107,29 @@ else
 
             <div class="article-actions-bar">
                 <div class="reactions-group">
-                    <button class="btn-action btn-like @(hasLiked ? "active-like" : "")" @onclick="() => HandleInteraction(true)">
+                    <button class="btn-action btn-like @(hasLiked ? "active-like" : "")"
+                            @onclick="() => HandleInteraction(true)"
+                            disabled="@(!sessionService.IsAuthenticated)">
                         <span class="action-icon">👍</span>
                         <span class="action-count">@currentNews.Likes</span>
                     </button>
-                    <button class="btn-action btn-dislike @(hasDisliked ? "active-dislike" : "")" @onclick="() => HandleInteraction(false)">
+                    <button class="btn-action btn-dislike @(hasDisliked ? "active-dislike" : "")"
+                            @onclick="() => HandleInteraction(false)"
+                            disabled="@(!sessionService.IsAuthenticated)">
                         <span class="action-icon">👎</span>
                         <span class="action-count">@currentNews.Dislikes</span>
                     </button>
                 </div>
+                @if (!sessionService.IsAuthenticated)
+                {
+                    <span class="comments-login-hint"><a href="/login">Sign in</a> to react.</span>
+                }
             </div>
+
+            @if (!string.IsNullOrWhiteSpace(reactionError))
+            {
+                <p class="comment-error">@reactionError</p>
+            }
 
             <section class="comments-section">
                 <h3 class="comments-heading">Comments</h3>
@@ -120,8 +143,16 @@ else
                 else
                 {
                     <div class="comment-form">
-                        <textarea class="comment-input" maxlength="500" rows="3" placeholder="Write a comment..." @bind="newCommentText"></textarea>
-                        <button class="btn-submit-comment" disabled="@isSubmittingComment" @onclick="SubmitComment">Post comment</button>
+                        <textarea class="comment-input"
+                                  maxlength="500"
+                                  rows="3"
+                                  placeholder="Write a comment..."
+                                  @bind="newCommentText"></textarea>
+                        <button class="btn-submit-comment"
+                                disabled="@isSubmittingComment"
+                                @onclick="SubmitComment">
+                            Post comment
+                        </button>
                     </div>
                 }
 
@@ -131,12 +162,12 @@ else
                 }
 
                 <ul class="comments-list">
-                    @foreach (var c in comments)
+                    @foreach (var comment in comments)
                     {
                         <li class="comment-item">
-                            <span class="comment-author">@(c.User?.Username ?? "User")</span>
-                            <span class="comment-date">@c.CreatedAt.ToString("MMM d, yyyy HH:mm")</span>
-                            <p class="comment-body">@c.CommentText</p>
+                            <span class="comment-author">@(comment.User?.Username ?? "User")</span>
+                            <span class="comment-date">@comment.CreatedAt.ToLocalTime().ToString("MMM d, yyyy HH:mm")</span>
+                            <p class="comment-body">@comment.CommentText</p>
                         </li>
                     }
                 </ul>
@@ -146,7 +177,7 @@ else
             {
                 <section class="additional-sources-section">
                     <div class="detail-section-label">ADDITIONAL SOURCES USED BY THE AI</div>
-                    <p class="additional-sources-intro">These independent sources supplied supporting information for the generated article.</p>
+                    <p class="additional-sources-intro">These independent news sources supplied factual material for the original NuctiusNow article.</p>
                     <div class="additional-source-list">
                         @foreach (var source in additionalSources)
                         {
@@ -197,6 +228,7 @@ else
     private string newCommentText = string.Empty;
     private bool isSubmittingComment;
     private string? commentError;
+    private string? reactionError;
     private bool scrollInterestRegistered;
     private bool timerInterestRegistered;
     private bool isGeneratingArticle;
@@ -212,78 +244,90 @@ else
             .Include(n => n.DetailNews)
             .FirstOrDefaultAsync(n => n.IdNews == Id);
 
-        if (currentNews != null)
+        if (currentNews == null)
         {
-            heroImageUrl = currentNews.DetailNews?.ImageUrl
-                ?? ExtractImageUrl(currentNews.DetailNews?.Context);
-
-            // Older stories may not have an image saved. Search SearXNG's Images
-            // category after the story has been selected and persist the direct URL.
-            if (string.IsNullOrWhiteSpace(heroImageUrl))
-            {
-                try
-                {
-                    heroImageUrl = await recommendationEngine.EnsureNewsImageAsync(Id);
-                }
-                catch (Exception imageEx)
-                {
-                    Console.Error.WriteLine($"News image search failed for news {Id}: {imageEx}");
-                }
-            }
-
-            LoadAdditionalSources();
-
-            if (currentNews.DetailNews != null &&
-                (currentNews.DetailNews.BodySource != "AiGenerated" ||
-                 string.IsNullOrWhiteSpace(currentNews.DetailNews.FullBodyText)))
-            {
-                isGeneratingArticle = true;
-                try
-                {
-                    var generated = await recommendationEngine.EnsureAiGeneratedArticleAsync(Id);
-                    if (!string.IsNullOrWhiteSpace(generated))
-                    {
-                        currentNews = await DbContext.News
-                            .Include(n => n.Tag)
-                            .Include(n => n.DetailNews)
-                            .FirstOrDefaultAsync(n => n.IdNews == Id);
-                    }
-
-                    // If AI article generation failed, keep the previous deterministic
-                    // extraction path as a secondary fallback.
-                    if (string.IsNullOrWhiteSpace(currentNews?.DetailNews?.FullBodyText))
-                    {
-                        var fallbackBody = await recommendationEngine.EnsureFullBodyTextAsync(Id);
-                        if (!string.IsNullOrWhiteSpace(fallbackBody))
-                        {
-                            currentNews = await DbContext.News
-                                .Include(n => n.Tag)
-                                .Include(n => n.DetailNews)
-                                .FirstOrDefaultAsync(n => n.IdNews == Id);
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    fullBodyError = "The AI generated article could not be created right now.";
-                    Console.Error.WriteLine($"AI article generation failed for news {Id}: {ex}");
-                }
-                finally
-                {
-                    isGeneratingArticle = false;
-                    LoadAdditionalSources();
-                }
-            }
-
-            // Generation/reloading can return a record with an image that was just
-            // persisted. Refresh the hero URL before rendering the rest of the page.
-            heroImageUrl = currentNews?.DetailNews?.ImageUrl
-                ?? heroImageUrl
-                ?? ExtractImageUrl(currentNews?.DetailNews?.Context);
-
-            comments = await recommendationEngine.GetCommentsForNewsAsync(Id);
+            isLoading = false;
+            return;
         }
 
+        heroImageUrl = currentNews.DetailNews?.ImageUrl;
+        LoadAdditionalSources();
+
+        // Images are cached permanently once found. Existing cached data therefore
+        // renders immediately on subsequent visits.
+        if (string.IsNullOrWhiteSpace(heroImageUrl))
+        {
+            try
+            {
+                heroImageUrl = await recommendationEngine.EnsureNewsImageAsync(Id);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"News image enrichment failed for {Id}: {ex}");
+            }
+        }
+
+        if (sessionService.IsAuthenticated && sessionService.UserId.HasValue)
+        {
+            try
+            {
+                var reaction = await recommendationEngine.GetUserReactionAsync(
+                    sessionService.UserId.Value,
+                    Id);
+
+                hasLiked = reaction == 1;
+                hasDisliked = reaction == -1;
+
+                // Direct opens (for example from a bookmark or URL) still register the
+                // article as viewed; Home/Search/For You already register the stronger click signal.
+                await recommendationEngine.RegisterNewsViewAsync(
+                    sessionService.UserId.Value,
+                    Id);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"News interaction initialization failed for {Id}: {ex}");
+            }
+        }
+
+        var hasCachedArticle = currentNews.DetailNews?.BodySource == "AiGenerated" &&
+                               !string.IsNullOrWhiteSpace(currentNews.DetailNews.FullBodyText);
+        var hasCachedSummary = !string.IsNullOrWhiteSpace(currentNews.DetailNews?.AiSummary);
+
+        if (!hasCachedArticle || !hasCachedSummary)
+        {
+            isGeneratingArticle = true;
+            try
+            {
+                var generated = await recommendationEngine.EnsureAiGeneratedArticleAsync(Id);
+
+                // The recommendation engine stores both the original NuctiusNow article
+                // and the AI summary. Reload once so the cached values are what the UI renders.
+                if (!string.IsNullOrWhiteSpace(generated) || !hasCachedSummary)
+                {
+                    currentNews = await DbContext.News
+                        .Include(n => n.Tag)
+                        .Include(n => n.DetailNews)
+                        .FirstOrDefaultAsync(n => n.IdNews == Id);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                fullBodyError = "The AI could not create an original article from the available news evidence right now.";
+                Console.Error.WriteLine($"AI article generation failed for news {Id}: {ex}");
+            }
+            finally
+            {
+                isGeneratingArticle = false;
+                LoadAdditionalSources();
+            }
+        }
+
+        comments = await recommendationEngine.GetCommentsForNewsAsync(Id);
         isLoading = false;
     }
 
@@ -296,8 +340,10 @@ else
 
         try
         {
-            var parsed = JsonSerializer.Deserialize<List<AdditionalSource>>(json,
+            var parsed = JsonSerializer.Deserialize<List<AdditionalSource>>(
+                json,
                 new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
             if (parsed != null)
             {
                 additionalSources = parsed
@@ -313,59 +359,82 @@ else
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!firstRender || currentNews == null) return;
+        if (!firstRender || currentNews == null)
+            return;
 
         readingTimer.Start();
 
-        readingInterestTimer = new Timer(async _ =>
+        if (sessionService.IsAuthenticated)
         {
-            if (timerInterestRegistered) return;
-            timerInterestRegistered = true;
-
-            await InvokeAsync(async () =>
+            readingInterestTimer = new Timer(async _ =>
             {
-                if (sessionService.UserId.HasValue)
+                if (timerInterestRegistered)
+                    return;
+
+                timerInterestRegistered = true;
+
+                try
                 {
-                    await recommendationEngine.RegisterReadingTimeAsync(
-                        sessionService.UserId.Value,
-                        Id,
-                        timeSpentSeconds: 120);
-                    await recommendationEngine.MarkNewsInterestAsync(sessionService.UserId.Value, Id);
+                    await InvokeAsync(async () =>
+                    {
+                        if (sessionService.UserId.HasValue)
+                        {
+                            await recommendationEngine.RegisterReadingTimeAsync(
+                                sessionService.UserId.Value,
+                                Id,
+                                timeSpentSeconds: 120);
+                        }
+                    });
                 }
-            });
-        }, null, TimeSpan.FromMinutes(2), Timeout.InfiniteTimeSpan);
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"Reading-time tracking failed for news {Id}: {ex.Message}");
+                }
+            }, null, TimeSpan.FromMinutes(2), Timeout.InfiniteTimeSpan);
+        }
 
         dotNetRef = DotNetObjectReference.Create(this);
         try
         {
             await JS.InvokeVoidAsync("newsDetailScroll.registerScrollEnd", dotNetRef);
         }
-        catch { }
+        catch
+        {
+            // Scroll tracking is optional; it must not break the article page.
+        }
     }
 
     [JSInvokable]
     public async Task OnScrollReachedEnd()
     {
-        if (scrollInterestRegistered) return;
+        if (scrollInterestRegistered)
+            return;
+
         scrollInterestRegistered = true;
 
         if (sessionService.UserId.HasValue)
-            await recommendationEngine.MarkNewsInterestAsync(sessionService.UserId.Value, Id);
-    }
-
-    private static string? ExtractImageUrl(string? context)
-    {
-        if (string.IsNullOrWhiteSpace(context)) return null;
-        var match = Regex.Match(context, @"https?://[^\s""']+\.(?:jpg|jpeg|png|gif|webp)", RegexOptions.IgnoreCase);
-        return match.Success ? match.Value : null;
+        {
+            try
+            {
+                await recommendationEngine.MarkNewsInterestAsync(
+                    sessionService.UserId.Value,
+                    Id);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"Scroll-interest tracking failed for news {Id}: {ex.Message}");
+            }
+        }
     }
 
     private static string GetSourceOwner(string url)
     {
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
             return "Source";
+
         var host = uri.Host.ToLowerInvariant();
-        if (host.StartsWith("www.")) host = host[4..];
+        if (host.StartsWith("www."))
+            host = host[4..];
 
         return host switch
         {
@@ -389,22 +458,16 @@ else
 
     private async Task HandleInteraction(bool isLike)
     {
-        if (currentNews == null) return;
+        reactionError = null;
 
-        if (isLike)
+        if (currentNews == null ||
+            !sessionService.IsAuthenticated ||
+            !sessionService.UserId.HasValue)
         {
-            if (hasLiked) { hasLiked = false; StateHasChanged(); return; }
-            hasLiked = true;
-            hasDisliked = false;
-        }
-        else
-        {
-            if (hasDisliked) { hasDisliked = false; StateHasChanged(); return; }
-            hasDisliked = true;
-            hasLiked = false;
+            return;
         }
 
-        if (sessionService.UserId.HasValue)
+        try
         {
             await recommendationEngine.RegisterInteractionAsync(
                 sessionService.UserId.Value,
@@ -412,13 +475,23 @@ else
                 liked: isLike,
                 interested: isLike);
 
+            var reaction = await recommendationEngine.GetUserReactionAsync(
+                sessionService.UserId.Value,
+                Id);
+
+            hasLiked = reaction == 1;
+            hasDisliked = reaction == -1;
+
             currentNews = await DbContext.News
                 .Include(n => n.Tag)
                 .Include(n => n.DetailNews)
                 .FirstOrDefaultAsync(n => n.IdNews == Id);
         }
-
-        StateHasChanged();
+        catch (Exception ex)
+        {
+            reactionError = "Could not save your reaction. Please try again.";
+            Console.Error.WriteLine($"Reaction update failed for news {Id}: {ex}");
+        }
     }
 
     private async Task SubmitComment()
@@ -440,7 +513,11 @@ else
         isSubmittingComment = true;
         try
         {
-            await recommendationEngine.AddCommentAsync(sessionService.UserId.Value, Id, newCommentText);
+            await recommendationEngine.AddCommentAsync(
+                sessionService.UserId.Value,
+                Id,
+                newCommentText);
+
             newCommentText = string.Empty;
             comments = await recommendationEngine.GetCommentsForNewsAsync(Id);
         }
@@ -457,22 +534,39 @@ else
     public async ValueTask DisposeAsync()
     {
         readingInterestTimer?.Dispose();
-        try { await JS.InvokeVoidAsync("newsDetailScroll.dispose"); } catch { }
+
+        try
+        {
+            await JS.InvokeVoidAsync("newsDetailScroll.dispose");
+        }
+        catch
+        {
+            // Ignore JS teardown errors when the circuit is already ending.
+        }
+
         dotNetRef?.Dispose();
 
         if (readingTimer.IsRunning)
         {
             readingTimer.Stop();
             var timeSpentSeconds = readingTimer.Elapsed.TotalSeconds;
-            if (sessionService.UserId.HasValue && timeSpentSeconds > 3 && currentNews != null)
-            {
-                await recommendationEngine.RegisterReadingTimeAsync(
-                    sessionService.UserId.Value,
-                    Id,
-                    timeSpentSeconds);
 
-                if (timeSpentSeconds >= 120)
-                    await recommendationEngine.MarkNewsInterestAsync(sessionService.UserId.Value, Id);
+            if (sessionService.UserId.HasValue &&
+                currentNews != null &&
+                timeSpentSeconds > 3 &&
+                !(timerInterestRegistered && timeSpentSeconds >= 120))
+            {
+                try
+                {
+                    await recommendationEngine.RegisterReadingTimeAsync(
+                        sessionService.UserId.Value,
+                        Id,
+                        timeSpentSeconds);
+                }
+                catch
+                {
+                    // Tracking must never prevent page disposal.
+                }
             }
         }
     }
@@ -484,4 +578,3 @@ else
         public string Owner { get; set; } = "Source";
     }
 }
-

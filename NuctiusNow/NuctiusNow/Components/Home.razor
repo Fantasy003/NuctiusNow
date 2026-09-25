@@ -1,6 +1,7 @@
 @page "/"
 
 @using System.Collections.Concurrent
+@using Microsoft.JSInterop
 @using Microsoft.EntityFrameworkCore
 @using NuctiusNow.Data
 @using NuctiusNow.Services
@@ -9,6 +10,7 @@
 @inject RecommendationEngine RecommendationEngine
 @inject CategoryNewsService CategoryNewsService
 @inject NavigationManager Navigation
+@inject IJSRuntime JS
 
 <PageTitle>NuctiusNow - Home</PageTitle>
 
@@ -85,9 +87,9 @@
                             </h2>
 
                             <p class="news-summary">
-                                @(hottestNews.DetailNews?.AiSummary
-                                    ?? hottestNews.DetailNews?.Context
-                                    ?? "No summary available.")
+                                @(string.IsNullOrWhiteSpace(hottestNews.DetailNews?.Context)
+                                    ? "Snippet unavailable for this story."
+                                    : hottestNews.DetailNews.Context)
                             </p>
 
                             <div class="news-meta-row">
@@ -122,6 +124,8 @@
     private readonly ConcurrentDictionary<string, bool> _isLoading = new();
     private readonly ConcurrentDictionary<string, News?> _hottestNewsByCategory = new();
     private readonly ConcurrentDictionary<string, NewsSelectionSource> _sourceByCategory = new();
+    private bool _explorationMode;
+    private const string FeedRefreshStorageKey = "nuctiusnow_feed_refresh_count";
 
     protected override async Task OnInitializedAsync()
     {
@@ -139,8 +143,38 @@
             _sourceByCategory[category.Name] = NewsSelectionSource.None;
         }
 
-        // Every entry/reload asks the AI for a fresh article first.
-        _ = LoadAllCategoriesAsync(Categories.Select(x => x.Name).ToList());
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+            return;
+
+        try
+        {
+            _explorationMode = await RegisterFeedRefreshAsync();
+            await LoadAllCategoriesAsync(Categories.Select(x => x.Name).ToList());
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Home feed initialization failed: {ex}");
+        }
+    }
+
+    private async Task<bool> RegisterFeedRefreshAsync()
+    {
+        try
+        {
+            var raw = await JS.InvokeAsync<string?>("localStorage.getItem", FeedRefreshStorageKey);
+            var count = int.TryParse(raw, out var parsed) ? parsed : 0;
+            count = (count % 5) + 1;
+            await JS.InvokeVoidAsync("localStorage.setItem", FeedRefreshStorageKey, count.ToString());
+            return count == 5;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private async Task LoadAllCategoriesAsync(IReadOnlyCollection<string> categories)
@@ -161,7 +195,8 @@
                 category,
                 userId,
                 timeoutCts.Token,
-                forceAiSearchFirst: true);
+                forceAiSearchFirst: true,
+                forceRandomSelection: _explorationMode);
 
             _hottestNewsByCategory[category] = result.News;
             _sourceByCategory[category] = result.Source;
@@ -214,3 +249,4 @@
 
     public record Category(string Name);
 }
+

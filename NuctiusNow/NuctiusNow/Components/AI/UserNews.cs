@@ -1,4 +1,4 @@
-﻿﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 #pragma warning disable IDE0130 // Namespace does not match folder structure
@@ -58,6 +58,11 @@ public class UserNews
     [Column("interest")]
     public bool Interest { get; set; }
 
+    // 0 = no reaction, 1 = like, -1 = dislike.
+    [Column("reaction")]
+    public int Reaction { get; set; } = 0;
+
     [Column("date_seen")]
     public DateTime DateSeen { get; set; } = DateTime.UtcNow;
 }
+

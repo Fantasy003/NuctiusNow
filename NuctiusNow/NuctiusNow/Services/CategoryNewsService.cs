@@ -41,9 +41,44 @@ public class CategoryNewsService
         string category,
         int? userId,
         CancellationToken cancellationToken = default,
-        bool forceAiSearchFirst = false)
+        bool forceAiSearchFirst = false,
+        bool forceRandomSelection = false)
     {
         var oneYearAgo = DateTime.UtcNow.AddYears(-1);
+
+        // Exploration mode intentionally ignores personalization and AI selection.
+        // Every fifth feed refresh can use this path to expose unrelated news and
+        // create new learning signals when the user chooses to interact with it.
+        if (forceRandomSelection)
+        {
+            var exploratory = await GetRandomNewsAsync(
+                category,
+                userId,
+                minimumDate: null,
+                onlyUnseen: true,
+                cancellationToken);
+
+            if (exploratory == null)
+            {
+                exploratory = await GetRandomNewsAsync(
+                    category,
+                    userId: null,
+                    minimumDate: null,
+                    onlyUnseen: false,
+                    cancellationToken);
+            }
+
+            if (exploratory != null)
+                await EnsureNewsImageIfMissingAsync(exploratory, cancellationToken);
+
+            return new CategoryNewsResult
+            {
+                News = exploratory,
+                Source = exploratory == null
+                    ? NewsSelectionSource.None
+                    : NewsSelectionSource.DatabaseRandomFallback
+            };
+        }
 
         // Normal mode: prefer something unseen from the last year.
         // Refresh mode: deliberately ask the AI first so the feed cycles.
@@ -75,7 +110,7 @@ public class CategoryNewsService
 
         try
         {
-            var aiNews = await recommendationEngine.ExecuteAiSearchForCategoryAsync(category, userId, ignoreOneYearRestriction: false, cancellationToken: cancellationToken);
+            var aiNews = await recommendationEngine.ExecuteAiSearchForCategoryAsync(category, userId, ignoreOneYearRestriction: false, cancellationToken: cancellationToken, forceRandomSelection: false);
             if (aiNews != null)
             {
                 // The AI-selected story is immediately paired with a direct image
@@ -119,7 +154,7 @@ public class CategoryNewsService
         // 4. All database articles were already seen. Run AI again without the restriction.
         try
         {
-            var unrestrictedAiNews = await recommendationEngine.ExecuteAiSearchForCategoryAsync(category, userId, ignoreOneYearRestriction: true, cancellationToken: cancellationToken);
+            var unrestrictedAiNews = await recommendationEngine.ExecuteAiSearchForCategoryAsync(category, userId, ignoreOneYearRestriction: true, cancellationToken: cancellationToken, forceRandomSelection: false);
             if (unrestrictedAiNews != null)
             {
                 await EnsureNewsImageIfMissingAsync(unrestrictedAiNews, cancellationToken);
@@ -199,10 +234,15 @@ public class CategoryNewsService
         }
     }
 
-    private async Task<News?> GetRandomNewsAsync(string category, int? userId, DateTime? minimumDate, bool onlyUnseen, CancellationToken cancellationToken)
+    private async Task<News?> GetRandomNewsAsync(
+        string category,
+        int? userId,
+        DateTime? minimumDate,
+        bool onlyUnseen,
+        CancellationToken cancellationToken)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
-        var normalizedCategory = category.Trim().ToLower();
+        var normalizedCategory = category.Trim().ToLowerInvariant();
 
         var query = db.News
             .AsNoTracking()
@@ -212,8 +252,6 @@ public class CategoryNewsService
 
         if (minimumDate.HasValue)
         {
-            // "News from the last year" is based on the article publication date,
-            // not on the date when the portal captured the article.
             query = query.Where(n =>
                 n.DetailNews != null &&
                 n.DetailNews.NewsDate >= minimumDate.Value);
@@ -221,11 +259,98 @@ public class CategoryNewsService
 
         if (onlyUnseen && userId.HasValue)
         {
-            // Hooking directly into your existing UserNews table
-            query = query.Where(n => !db.UserNews.Any(view => view.IdUser == userId.Value && view.IdNews == n.IdNews && view.Seen));
+            query = query.Where(n =>
+                !db.UserNews.Any(view =>
+                    view.IdUser == userId.Value &&
+                    view.IdNews == n.IdNews &&
+                    view.Seen));
         }
 
-        return await query.OrderBy(n => EF.Functions.Random()).FirstOrDefaultAsync(cancellationToken);
+        // Pull a bounded candidate pool into memory, then apply the user's learned
+        // preference/keyword weights to the candidate title and summary/context.
+        var candidates = await query
+            .OrderByDescending(n => n.DetailNews!.NewsDate)
+            .Take(100)
+            .ToListAsync(cancellationToken);
+
+        if (candidates.Count == 0)
+            return null;
+
+        if (!userId.HasValue)
+            return candidates[Random.Shared.Next(candidates.Count)];
+
+        var termWeights = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+        var preferenceRows = await db.UserPreferences
+            .AsNoTracking()
+            .Include(up => up.Preference)
+                .ThenInclude(p => p.Tag)
+            .Where(up => up.IdUser == userId.Value && up.Preference != null && up.Weight > 0)
+            .ToListAsync(cancellationToken);
+
+        foreach (var row in preferenceRows)
+        {
+            var term = row.Preference?.Tag?.Name ?? row.Preference?.PreferenceName;
+            if (string.IsNullOrWhiteSpace(term))
+                continue;
+
+            var clean = term.Trim();
+            termWeights.TryGetValue(clean, out var current);
+            termWeights[clean] = current + Math.Max(1, row.Weight);
+        }
+
+        var keywordRows = await db.UserInterestKeywords
+            .AsNoTracking()
+            .Where(k => k.IdUser == userId.Value && k.Weight > 0)
+            .ToListAsync(cancellationToken);
+
+        foreach (var row in keywordRows)
+        {
+            if (string.IsNullOrWhiteSpace(row.Keyword))
+                continue;
+
+            var clean = row.Keyword.Trim();
+            termWeights.TryGetValue(clean, out var current);
+            termWeights[clean] = current + row.Weight;
+        }
+
+        if (termWeights.Count == 0)
+            return candidates[Random.Shared.Next(candidates.Count)];
+
+        var scored = candidates
+            .Select(news =>
+            {
+                var searchable = string.Join(
+                    " ",
+                    news.DetailNews?.Keyword,
+                    news.DetailNews?.AiSummary,
+                    news.DetailNews?.Context)
+                    .ToLowerInvariant();
+
+                var score = termWeights.Sum(term =>
+                {
+                    var value = term.Key.ToLowerInvariant();
+                    if (!searchable.Contains(value, StringComparison.Ordinal))
+                        return 0;
+
+                    var titleMatch = news.DetailNews?.Keyword?.Contains(term.Key, StringComparison.OrdinalIgnoreCase) == true;
+                    return term.Value * (titleMatch ? 3 : 1);
+                });
+
+                return (news, score);
+            })
+            .ToList();
+
+        var matched = scored
+            .Where(x => x.score > 0)
+            .OrderByDescending(x => x.score)
+            .ToList();
+
+        // The user's requested rule: filter out unmatched stories when matches exist;
+        // if there is no match, return any available story so the feed never becomes empty.
+        return matched.Count > 0
+            ? matched[Random.Shared.Next(matched.Count)].news
+            : candidates[Random.Shared.Next(candidates.Count)];
     }
 
     private async Task MarkNewsAvailableForUserAsync(

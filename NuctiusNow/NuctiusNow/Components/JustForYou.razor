@@ -5,6 +5,7 @@
 @inject UserSessionService sessionService
 @inject RecommendationEngine RecommendationEngine
 @inject NavigationManager Navigation
+@inject IJSRuntime JS
 
 <PageTitle>NuctiusNow - Just For You</PageTitle>
 
@@ -139,9 +140,9 @@
 
                                     <h2 class="news-title">@(news.DetailNews?.Keyword ?? "Untitled story")</h2>
                                     <p class="news-body">
-                                        @(news.DetailNews?.AiSummary
-                                            ?? news.DetailNews?.Context
-                                            ?? "No summary available.")
+                                        @(string.IsNullOrWhiteSpace(news.DetailNews?.Context)
+                                            ? "Snippet unavailable for this story."
+                                            : news.DetailNews.Context)
                                     </p>
 
                                     <div class="news-meta-row">
@@ -185,6 +186,8 @@
     private DateTimeOffset? _lastRefreshAt;
     private readonly List<string> _preferences = new();
     private List<RecommendationEngine.PersonalizedRecommendation> _recommendations = new();
+    private bool _explorationMode;
+    private const string FeedRefreshStorageKey = "nuctiusnow_feed_refresh_count";
 
     protected override async Task OnInitializedAsync()
     {
@@ -215,10 +218,13 @@
 
         try
         {
+            _explorationMode = await RegisterFeedRefreshAsync();
+
             using var timeoutCts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
             _recommendations = await RecommendationEngine.GetPersonalizedRecommendationsAsync(
                 sessionService.UserId.Value,
-                timeoutCts.Token);
+                timeoutCts.Token,
+                explorationMode: _explorationMode);
 
             _lastRefreshAt = DateTimeOffset.UtcNow;
         }
@@ -234,6 +240,22 @@
         {
             _isRefreshing = false;
             await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task<bool> RegisterFeedRefreshAsync()
+    {
+        try
+        {
+            var raw = await JS.InvokeAsync<string?>("localStorage.getItem", FeedRefreshStorageKey);
+            var count = int.TryParse(raw, out var parsed) ? parsed : 0;
+            count = (count % 5) + 1;
+            await JS.InvokeVoidAsync("localStorage.setItem", FeedRefreshStorageKey, count.ToString());
+            return count == 5;
+        }
+        catch
+        {
+            return false;
         }
     }
 
@@ -261,3 +283,5 @@
     private static string GetPreferenceLabel(RecommendationEngine.PersonalizedRecommendation item) =>
         item.Weight > 0 ? $"Weight {item.Weight}" : "Personalized";
 }
+
+

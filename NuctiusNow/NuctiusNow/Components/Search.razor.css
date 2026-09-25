@@ -1,3 +1,4 @@
+File type: .css
 ﻿﻿/* ============================================================
    SEARCH PAGE — Mobile-First Search Interface
    ============================================================ */
@@ -400,4 +401,70 @@
     border-top: 1px solid var(--border);
     border-bottom: 1px solid var(--border);
     font-size: .85rem;
+}
+
+.section-kicker {
+    display: inline-flex;
+    color: var(--accent);
+    font-size: .67rem;
+    font-weight: 800;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    margin-bottom: .35rem;
+}
+
+.search-result-card {
+    cursor: pointer;
+}
+
+.search-result-card:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+}
+
+.result-image {
+    overflow: hidden;
+}
+
+.result-image > img,
+.result-image-placeholder {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.result-image-placeholder {
+    display: grid;
+    place-items: center;
+    font-family: var(--font-editorial);
+    font-size: 4rem;
+    color: rgba(255,255,255,.78);
+    background:
+        radial-gradient(circle at 25% 20%, rgba(230,57,70,.38), transparent 34%),
+        linear-gradient(135deg, rgba(255,255,255,.05), rgba(255,255,255,.015));
+}
+
+.result-topline {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: .5rem;
+    margin-bottom: .4rem;
+}
+
+.result-ai-badge,
+.result-cached-badge {
+    font-size: .6rem;
+    font-weight: 800;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+}
+
+.result-ai-badge { color: var(--accent); }
+.result-cached-badge { color: var(--text-muted); }
+
+.result-link {
+    position: relative;
+    z-index: 3;
 }

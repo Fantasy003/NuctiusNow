@@ -40,7 +40,7 @@ public class User
     [Column("last_profile_update_at")]
     public DateTime? LastProfileUpdateAt { get; set; }
 
-    // Navigation Properties
     public virtual ICollection<UserPreference> UserPreferences { get; set; } = new List<UserPreference>();
     public virtual ICollection<UserNews> UserNews { get; set; } = new List<UserNews>();
+    public virtual ICollection<UserInterestKeyword> InterestKeywords { get; set; } = new List<UserInterestKeyword>();
 }

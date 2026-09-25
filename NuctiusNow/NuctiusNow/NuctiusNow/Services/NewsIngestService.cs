@@ -19,9 +19,8 @@ public class NewsIngestService
     }
 
     /// <summary>
-    /// Creates or updates a news record while preserving compatibility with all
-    /// existing callers. Full article text, image and source metadata are optional
-    /// and can be filled later by NewsDetails.
+    /// Creates or updates a news record while keeping source snippets separate from
+    /// the AI-generated summary/article. Full source article text is never stored here.
     /// </summary>
     public async Task<News> SaveOrUpdateNewsAsync(
         string hyperlink,
@@ -38,8 +37,18 @@ public class NewsIngestService
         string? additionalSourcesJson = null)
     {
         hyperlink = hyperlink?.Trim() ?? string.Empty;
-        keyword = string.IsNullOrWhiteSpace(keyword) ? "Untitled story" : keyword.Trim();
+        keyword = string.IsNullOrWhiteSpace(keyword)
+            ? "Untitled story"
+            : keyword.Trim();
         contextText = contextText?.Trim();
+
+        // Never persist a publisher's extracted article body under the source marker.
+        // Only the NuctiusNow-generated article is allowed to occupy FullBodyText.
+        if (string.Equals(bodySource, "Original", StringComparison.OrdinalIgnoreCase))
+        {
+            fullBodyText = null;
+            bodySource = "Unknown";
+        }
 
         var news = await _context.News
             .Include(n => n.DetailNews)
@@ -51,10 +60,14 @@ public class NewsIngestService
             {
                 Keyword = keyword,
                 Context = contextText,
-                AiSummary = contextText,
+                // IMPORTANT: Context is a search snippet/evidence field.
+                // It must not be presented as the AI summary.
+                AiSummary = null,
                 NewsDate = newsDate ?? DateTime.UtcNow,
                 FullBodyText = fullBodyText,
-                BodySource = string.IsNullOrWhiteSpace(bodySource) ? "Unknown" : bodySource,
+                BodySource = string.IsNullOrWhiteSpace(bodySource)
+                    ? "Unknown"
+                    : bodySource,
                 ImageUrl = imageUrl,
                 AdditionalSourcesJson = additionalSourcesJson
             };
@@ -89,10 +102,15 @@ public class NewsIngestService
                 {
                     Keyword = keyword,
                     Context = contextText,
-                    AiSummary = contextText,
+                    AiSummary = null,
                     NewsDate = newsDate ?? DateTime.UtcNow,
-                    BodySource = string.IsNullOrWhiteSpace(bodySource) ? "Unknown" : bodySource
+                    BodySource = string.IsNullOrWhiteSpace(bodySource)
+                        ? "Unknown"
+                        : bodySource,
+                    ImageUrl = imageUrl,
+                    AdditionalSourcesJson = additionalSourcesJson
                 };
+
                 _context.DetailNews.Add(news.DetailNews);
             }
             else
@@ -100,16 +118,21 @@ public class NewsIngestService
                 news.DetailNews.Keyword = keyword;
 
                 if (!string.IsNullOrWhiteSpace(contextText))
-                {
                     news.DetailNews.Context = contextText;
-                    news.DetailNews.AiSummary = contextText;
-                }
+
+                // Context is search evidence/snippet data, never the displayed summary.
+                // Preserve an already generated NuctiusNow summary, but clear stale
+                // snippet-derived summaries from legacy records.
+                if (!string.Equals(news.DetailNews.BodySource, "AiGenerated", StringComparison.OrdinalIgnoreCase))
+                    news.DetailNews.AiSummary = null;
 
                 if (newsDate.HasValue)
                     news.DetailNews.NewsDate = newsDate.Value;
 
                 if (!string.IsNullOrWhiteSpace(fullBodyText))
+                {
                     news.DetailNews.FullBodyText = fullBodyText;
+                }
 
                 if (!string.IsNullOrWhiteSpace(bodySource))
                     news.DetailNews.BodySource = bodySource;

@@ -467,13 +467,38 @@ public class RecommendationEngine
     public async Task RegisterInteractionAsync(int userId, int newsId, bool liked, bool interested)
     {
         var news = await _context.News.FindAsync(newsId);
-        if (news == null) return;
-
-        if (liked) news.Likes++;
-        else news.Dislikes++;
+        if (news == null)
+            return;
 
         var userNews = await _context.UserNews
             .FirstOrDefaultAsync(un => un.IdUser == userId && un.IdNews == newsId);
+
+        var newReaction = liked ? 1 : -1;
+        var previousReaction = userNews?.Reaction ?? 0;
+
+        // The same user may have only one reaction for a news item.
+        // Clicking the same reaction again is a no-op.
+        if (previousReaction == newReaction)
+        {
+            if (userNews != null)
+            {
+                userNews.Seen = true;
+                userNews.DateSeen = DateTime.UtcNow;
+            }
+
+            await _context.SaveChangesAsync();
+            return;
+        }
+
+        if (previousReaction == 1)
+            news.Likes = Math.Max(0, news.Likes - 1);
+        else if (previousReaction == -1)
+            news.Dislikes = Math.Max(0, news.Dislikes - 1);
+
+        if (newReaction == 1)
+            news.Likes++;
+        else
+            news.Dislikes++;
 
         if (userNews == null)
         {
@@ -482,34 +507,54 @@ public class RecommendationEngine
                 IdUser = userId,
                 IdNews = newsId,
                 Seen = true,
-                Interest = interested,
+                Interest = newReaction == 1,
+                Reaction = newReaction,
                 DateSeen = DateTime.UtcNow
             };
+
             _context.UserNews.Add(userNews);
         }
         else
         {
             userNews.Seen = true;
-            userNews.Interest = userNews.Interest || interested;
+            userNews.Interest = newReaction == 1;
+            userNews.Reaction = newReaction;
             userNews.DateSeen = DateTime.UtcNow;
         }
 
-        var userPref = await _context.UserPreferences
-            .Include(up => up.Preference)
-            .FirstOrDefaultAsync(up => up.IdUser == userId && up.Preference != null && up.Preference.IdTag == news.IdTag);
-
-        if (userPref != null)
-        {
-            userPref.Weight += liked ? 1 : -1;
-        }
+        // Convert the reaction change into recommendation-signal weight.
+        // +3 = like, -3 = dislike. Switching directly from one reaction to the other
+        // reverses the old signal and applies the new one in the same transaction.
+        var reactionDelta = (newReaction - previousReaction) * 3;
+        await LearnFromNewsAsync(userId, newsId, reactionDelta);
 
         await _context.SaveChangesAsync();
     }
 
-    public async Task RegisterCategoryClickAsync(int userId, int newsId)
+    public async Task<int> GetUserReactionAsync(int userId, int newsId)
     {
-        var news = await _context.News.FindAsync(newsId);
-        if (news == null) return;
+        var reaction = await _context.UserNews
+            .AsNoTracking()
+            .Where(un => un.IdUser == userId && un.IdNews == newsId)
+            .Select(un => (int?)un.Reaction)
+            .FirstOrDefaultAsync();
+
+        return reaction ?? 0;
+    }
+
+    /// <summary>
+    /// Registers a direct article view without creating a like/dislike reaction.
+    /// A small positive learning signal is recorded so direct opens contribute to
+    /// future recommendations as requested by the personalization flow.
+    /// </summary>
+    public async Task RegisterNewsViewAsync(int userId, int newsId)
+    {
+        var newsExists = await _context.News
+            .AsNoTracking()
+            .AnyAsync(n => n.IdNews == newsId);
+
+        if (!newsExists)
+            return;
 
         var userNews = await _context.UserNews
             .FirstOrDefaultAsync(un => un.IdUser == userId && un.IdNews == newsId);
@@ -522,36 +567,66 @@ public class RecommendationEngine
                 IdNews = newsId,
                 Seen = true,
                 Interest = true,
+                Reaction = 0,
                 DateSeen = DateTime.UtcNow
             });
         }
         else
         {
             userNews.Seen = true;
-            userNews.Interest = true;
             userNews.DateSeen = DateTime.UtcNow;
+            if (userNews.Reaction >= 0)
+                userNews.Interest = true;
         }
 
-        var userPref = await _context.UserPreferences
-            .Include(up => up.Preference)
-            .FirstOrDefaultAsync(up => up.IdUser == userId && up.Preference != null && up.Preference.IdTag == news.IdTag);
+        await LearnFromNewsAsync(userId, newsId, 1);
+        await _context.SaveChangesAsync();
+    }
+    public async Task RegisterCategoryClickAsync(int userId, int newsId)
+    {
+        var news = await _context.News.FindAsync(newsId);
+        if (news == null)
+            return;
 
-        if (userPref != null)
+        var userNews = await _context.UserNews
+            .FirstOrDefaultAsync(un => un.IdUser == userId && un.IdNews == newsId);
+
+        if (userNews == null)
         {
-            userPref.Weight += 1;
+            _context.UserNews.Add(new UserNews
+            {
+                IdUser = userId,
+                IdNews = newsId,
+                Seen = true,
+                Interest = true,
+                Reaction = 0,
+                DateSeen = DateTime.UtcNow
+            });
+        }
+        else
+        {
+            userNews.Seen = true;
+            userNews.DateSeen = DateTime.UtcNow;
+            if (userNews.Reaction >= 0)
+                userNews.Interest = true;
         }
 
+        await LearnFromNewsAsync(userId, newsId, 1);
         await _context.SaveChangesAsync();
     }
 
     public async Task AddCommentAsync(int userId, int newsId, string text)
     {
-        if (string.IsNullOrWhiteSpace(text)) return;
+        if (string.IsNullOrWhiteSpace(text))
+            return;
+
         text = text.Trim();
-        if (text.Length > 500) text = text[..500];
+        if (text.Length > 500)
+            text = text[..500];
 
         var news = await _context.News.FindAsync(newsId);
-        if (news == null) return;
+        if (news == null)
+            return;
 
         _context.NewsComments.Add(new NewsComment
         {
@@ -572,24 +647,19 @@ public class RecommendationEngine
                 IdNews = newsId,
                 Seen = true,
                 Interest = true,
+                Reaction = 0,
                 DateSeen = DateTime.UtcNow
             });
         }
         else
         {
-            userNews.Interest = true;
             userNews.Seen = true;
+            userNews.DateSeen = DateTime.UtcNow;
+            if (userNews.Reaction >= 0)
+                userNews.Interest = true;
         }
 
-        var userPref = await _context.UserPreferences
-            .Include(up => up.Preference)
-            .FirstOrDefaultAsync(up => up.IdUser == userId && up.Preference != null && up.Preference.IdTag == news.IdTag);
-
-        if (userPref != null)
-        {
-            userPref.Weight += 1;
-        }
-
+        await LearnFromNewsAsync(userId, newsId, 3, text);
         await _context.SaveChangesAsync();
     }
 
@@ -615,32 +685,28 @@ public class RecommendationEngine
                 IdNews = newsId,
                 Seen = true,
                 Interest = true,
+                Reaction = 0,
                 DateSeen = DateTime.UtcNow
             });
         }
         else
         {
-            userNews.Interest = true;
             userNews.Seen = true;
             userNews.DateSeen = DateTime.UtcNow;
+            if (userNews.Reaction >= 0)
+                userNews.Interest = true;
         }
 
+        await LearnFromNewsAsync(userId, newsId, 1);
         await _context.SaveChangesAsync();
     }
 
-    /// <summary>
-    /// Busca noticias vía LM Studio para una categoría de Home, resume, categoriza y persiste en BD.
-    /// </summary>
-    /// <summary>
-    /// Performs a broad AI-driven category search through LM Studio + rzk/searxng-search,
-    /// selects one fresh result and stores only the lightweight metadata needed by Home.
-    /// Full article generation is deferred until NewsDetails is opened.
-    /// </summary>
     public async Task<News?> ExecuteAiSearchForCategoryAsync(
         string categoryName,
         int? userId = null,
         bool ignoreOneYearRestriction = false,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool forceRandomSelection = false)
     {
         var llm = _llmService;
         var ingest = _newsIngest;
@@ -663,6 +729,10 @@ public class RecommendationEngine
             await _context.SaveChangesAsync(cancellationToken);
         }
 
+        var interestTerms = userId.HasValue
+            ? await GetUserInterestTermsAsync(userId.Value, cancellationToken)
+            : new List<(string Keyword, int Weight)>();
+
         var blockedUrls = (await _context.News
                 .AsNoTracking()
                 .Select(n => n.Hyperlink)
@@ -682,16 +752,19 @@ public class RecommendationEngine
 
         for (var attempt = 1; attempt <= 3; attempt++)
         {
-            var searchQuery = BuildCategorySearchTask(
-                mapping.Category,
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var searchQuery = BuildCategorySearchQuery(
                 mapping.SearchQuery,
-                ignoreOneYearRestriction,
-                attempt > 1);
+                interestTerms,
+                attempt,
+                forceRandomSelection);
 
             var results = await llm.SearchNewsAsync(
                 searchQuery,
-                maxResults: 10,
-                cancellationToken: cancellationToken);
+                maxResults: 12,
+                cancellationToken: cancellationToken,
+                startingPage: (attempt - 1) * 3 + 1);
 
             var candidates = results
                 .Select(r => (
@@ -701,8 +774,8 @@ public class RecommendationEngine
                 .Where(r =>
                     !string.IsNullOrWhiteSpace(r.Url) &&
                     !blockedUrls.Contains(r.Url) &&
-                    (string.IsNullOrWhiteSpace(r.Title) ||
-                     !blockedTitles.Contains(NormalizeTitle(r.Title))))
+                    LooksLikeValidNewsCandidate(r.Title, r.Url, r.Snippet) &&
+                    MatchesCategoryTheme(mapping.Category, r.Title, r.Snippet))
                 .GroupBy(r => r.Url, StringComparer.OrdinalIgnoreCase)
                 .Select(g => g.First())
                 .ToList();
@@ -710,8 +783,21 @@ public class RecommendationEngine
             if (candidates.Count == 0)
                 continue;
 
-            var selected = candidates[Random.Shared.Next(candidates.Count)];
-            var summary = !string.IsNullOrWhiteSpace(selected.Snippet)
+            // Home must never turn an unmatched interest into an off-topic article.
+            // Search results are first restricted to the requested category, then the
+            // user's learned interests are used as a relevance preference. If none of
+            // the category results match an interest, return null after the search
+            // attempts so CategoryNewsService can provide a random article from the
+            // same category as the explicit fallback.
+            if (forceRandomSelection)
+                continue;
+
+            var selected = SelectBestInterestCandidate(candidates, interestTerms);
+
+            if (string.IsNullOrWhiteSpace(selected.Url))
+                continue;
+
+            var summaryContext = !string.IsNullOrWhiteSpace(selected.Snippet)
                 ? selected.Snippet
                 : selected.Title;
 
@@ -719,7 +805,7 @@ public class RecommendationEngine
             {
                 var news = await ingest.SaveOrUpdateNewsAsync(
                     selected.Url,
-                    summary,
+                    summaryContext,
                     selected.Title,
                     tag.IdTag,
                     isSfw: true,
@@ -731,18 +817,16 @@ public class RecommendationEngine
                     imageUrl: null,
                     additionalSourcesJson: null);
 
-                // Once the article is selected, immediately search SearXNG Images
-                // for a direct editorial image so Home can display it without waiting
-                // for NewsDetails.
+                blockedUrls.Add(selected.Url);
+                blockedTitles.Add(NormalizeTitle(selected.Title));
+
                 try
                 {
                     await EnsureNewsImageAsync(news.IdNews, cancellationToken);
                 }
                 catch (Exception imageEx)
                 {
-                    _logger?.LogWarning(imageEx,
-                        "Could not obtain image for category news {NewsId}",
-                        news.IdNews);
+                    _logger?.LogDebug(imageEx, "Image enrichment failed for News {NewsId}", news.IdNews);
                 }
 
                 return await _context.News
@@ -752,35 +836,153 @@ public class RecommendationEngine
             }
             catch (Exception ex)
             {
-                _logger?.LogError(ex, "Failed to ingest category result for {Category}", categoryName);
+                _logger?.LogWarning(ex, "Failed to ingest selected AI result for category {Category}", categoryName);
             }
         }
 
         return null;
     }
 
-    private static string BuildCategorySearchTask(
-        string category,
+    private static string BuildCategorySearchQuery(
         string baseSearchQuery,
-        bool ignoreOneYearRestriction,
-        bool retry)
+        IReadOnlyList<(string Keyword, int Weight)> interestTerms,
+        int attempt,
+        bool explorationMode)
     {
-        var query = string.IsNullOrWhiteSpace(baseSearchQuery)
-            ? category
-            : baseSearchQuery.Trim();
+        var query = $"{baseSearchQuery} latest current news";
 
-        // SearchNewsAsync sends this concise query to SearXNG's dedicated News
-        // category. Keeping the query short is intentional: the category itself
-        // supplies the semantic restriction, while SearXNG supplies real news pages.
-        var suffix = ignoreOneYearRestriction
-            ? " latest current news"
-            : " latest current news";
+        if (explorationMode || interestTerms.Count == 0)
+            return query;
 
-        var retrySuffix = retry
-            ? " different story"
-            : string.Empty;
+        var preferred = interestTerms
+            .OrderByDescending(x => x.Weight)
+            .Skip((attempt - 1) % Math.Min(3, interestTerms.Count))
+            .Take(2)
+            .Select(x => x.Keyword)
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .ToList();
 
-        return $"{query} {category}{suffix}{retrySuffix}".Trim();
+        if (preferred.Count > 0)
+            query += " " + string.Join(" ", preferred);
+
+        return query;
+    }
+
+    private static bool LooksLikeValidNewsCandidate(string title, string url, string snippet)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) ||
+            (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+            return false;
+
+        if (string.IsNullOrWhiteSpace(title) || title.Length < 10)
+            return false;
+
+        if (string.IsNullOrWhiteSpace(snippet) || snippet.Length < 30)
+            return false;
+
+        return !ArticleExtractionService.IsKnownNonArticlePage(uri);
+    }
+
+    private static (string Title, string Url, string Snippet) SelectBestInterestCandidate(
+        IReadOnlyList<(string Title, string Url, string Snippet)> candidates,
+        IReadOnlyList<(string Keyword, int Weight)> interestTerms)
+    {
+        if (candidates.Count == 0 || interestTerms.Count == 0)
+            return default;
+
+        var scored = candidates
+            .Select(candidate => new
+            {
+                Candidate = candidate,
+                Score = interestTerms.Sum(term =>
+                {
+                    var keyword = term.Keyword.Trim();
+                    if (keyword.Length < 2)
+                        return 0;
+
+                    var inTitle = candidate.Title.Contains(keyword, StringComparison.OrdinalIgnoreCase);
+                    var inSnippet = candidate.Snippet.Contains(keyword, StringComparison.OrdinalIgnoreCase);
+                    var termScore = (inTitle ? 3 : 0) + (inSnippet ? 1 : 0);
+                    return termScore * Math.Max(1, term.Weight);
+                })
+            })
+            .Where(x => x.Score > 0)
+            .OrderByDescending(x => x.Score)
+            .ThenBy(_ => Random.Shared.Next())
+            .ToList();
+
+        return scored.Count > 0
+            ? scored[0].Candidate
+            : default;
+    }
+
+    /// <summary>
+    /// Enforces a deterministic theme gate before a web result can be assigned to
+    /// a Home category. The search query still comes from InternetSearchService; this
+    /// gate prevents a highly weighted user keyword from pulling a story whose title
+    /// and snippet belong to another editorial section.
+    /// </summary>
+    private static bool MatchesCategoryTheme(string category, string title, string snippet)
+    {
+        var text = $"{title} {snippet}".ToLowerInvariant();
+
+        if (string.Equals(category, "Technology", StringComparison.OrdinalIgnoreCase))
+            return ContainsAny(text,
+                "technology", "tech", "software", "hardware", "computer", "computing",
+                "artificial intelligence", "ai", "machine learning", "cybersecurity", "cyber security",
+                "cyberattack", "chip", "semiconductor", "processor", "gpu", "cpu", "nvidia",
+                "apple", "google", "microsoft", "amazon", "meta", "openai", "smartphone",
+                "iphone", "android", "laptop", "cloud", "internet", "app", "robot", "robotics",
+                "quantum", "console", "xbox", "playstation", "nintendo", "developer", "programming");
+
+        if (string.Equals(category, "Sports", StringComparison.OrdinalIgnoreCase))
+            return ContainsAny(text,
+                "sport", "sports", "football", "soccer", "basketball", "baseball", "tennis",
+                "golf", "rugby", "cricket", "hockey", "formula 1", "formula one", "f1",
+                "nfl", "nba", "mlb", "nhl", "uefa", "fifa", "olympic", "athlete", "team",
+                "match", "tournament", "league", "championship", "playoff", "coach", "player", "race");
+
+        if (string.Equals(category, "Politics", StringComparison.OrdinalIgnoreCase))
+            return ContainsAny(text,
+                "politic", "election", "president", "presidential", "government", "senate", "senator",
+                "congress", "parliament", "minister", "mayor", "governor", "campaign", "ballot",
+                "vote", "voting", "legislation", "lawmaker", "policy", "political party", "party leader",
+                "administration", "prime minister", "candidate");
+
+        if (string.Equals(category, "Health", StringComparison.OrdinalIgnoreCase))
+            return ContainsAny(text,
+                "health", "medical", "medicine", "disease", "hospital", "doctor", "patient",
+                "vaccine", "vaccination", "drug", "treatment", "therapy", "cancer", "clinical trial",
+                "healthcare", "public health", "fda", "cdc", "who", "outbreak", "virus", "infection",
+                "diagnosis", "surgery", "mental health", "wellness");
+
+        if (string.Equals(category, "Business", StringComparison.OrdinalIgnoreCase))
+            return ContainsAny(text,
+                "business", "company", "companies", "market", "markets", "stock", "stocks", "shares",
+                "earnings", "revenue", "profit", "investment", "investor", "economy", "economic",
+                "finance", "financial", "bank", "banking", "trade", "merger", "acquisition", "ceo",
+                "inflation", "interest rate", "recession", "retail", "sales", "industry", "ipo");
+
+        if (string.Equals(category, "Entertainment", StringComparison.OrdinalIgnoreCase))
+            return ContainsAny(text,
+                "entertainment", "movie", "film", "actor", "actress", "director", "music", "singer",
+                "song", "album", "concert", "television", " tv ", "series", "show", "streaming",
+                "netflix", "disney", "paramount", "hbo", "trailer", "celebrity", "award", "awards",
+                "gaming", "video game", "video games", "xbox", "playstation", "nintendo", "game release");
+
+        // Unknown categories remain governed by the search provider's category query.
+        return true;
+    }
+
+    private static bool ContainsAny(string text, params string[] terms)
+    {
+        foreach (var term in terms)
+        {
+            if (text.Contains(term, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
     }
 
     /// <summary>
@@ -791,8 +993,12 @@ public class RecommendationEngine
     /// </summary>
     public async Task<List<PersonalizedRecommendation>> GetPersonalizedRecommendationsAsync(
         int userId,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool explorationMode = false)
     {
+        if (explorationMode)
+            return await GetExplorationRecommendationsAsync(userId, cancellationToken);
+
         var output = new List<PersonalizedRecommendation>();
         if (_llmService == null || _newsIngest == null)
             return output;
@@ -810,14 +1016,14 @@ public class RecommendationEngine
                 up => up.Preference!.Tag?.Name ?? up.Preference!.PreferenceName,
                 StringComparer.OrdinalIgnoreCase)
             .Select(g => g.First())
+            .OrderByDescending(x => x.Weight)
             .ToList();
 
         if (distinctPreferences.Count == 0)
             return output;
 
-        var personalizationContext = await BuildUserPersonalizationContextAsync(
-            userId,
-            cancellationToken);
+        var interestTerms = await GetUserInterestTermsAsync(userId, cancellationToken);
+        var personalizationContext = await BuildUserPersonalizationContextAsync(userId, cancellationToken);
 
         var blockedUrls = (await _context.News
                 .AsNoTracking()
@@ -836,19 +1042,19 @@ public class RecommendationEngine
             .Where(t => !string.IsNullOrWhiteSpace(t))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        // First pass: exactly one story for every explicit preference.
         foreach (var userPreference in distinctPreferences)
         {
             cancellationToken.ThrowIfCancellationRequested();
-
             var preference = userPreference.Preference!;
             var preferenceName = preference.Tag?.Name ?? preference.PreferenceName ?? "News";
+
             var recommendation = await SearchPreferenceStoryAsync(
                 userId,
                 preferenceName,
                 preference.IdTag,
                 userPreference.Weight,
                 personalizationContext,
+                interestTerms,
                 isSupplemental: false,
                 blockedUrls,
                 blockedTitles,
@@ -858,12 +1064,9 @@ public class RecommendationEngine
                 output.Add(recommendation);
         }
 
-        // Second pass: fill to four with additional DISTINCT stories from the user's
-        // existing preferences. Cycle through preferences so the fill does not repeat
-        // the same preference whenever possible.
         var fillPreferenceIndex = 0;
         var fillAttempts = 0;
-        while (output.Count < 4 && fillAttempts < distinctPreferences.Count * 3)
+        while (output.Count < 4 && fillAttempts < Math.Max(3, distinctPreferences.Count * 3))
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -877,6 +1080,7 @@ public class RecommendationEngine
                 preference.IdTag,
                 userPreference.Weight,
                 personalizationContext,
+                interestTerms,
                 isSupplemental: true,
                 blockedUrls,
                 blockedTitles,
@@ -898,12 +1102,58 @@ public class RecommendationEngine
         int Weight,
         bool IsSupplemental);
 
+    private async Task<List<PersonalizedRecommendation>> GetExplorationRecommendationsAsync(
+        int userId,
+        CancellationToken cancellationToken)
+    {
+        var output = new List<PersonalizedRecommendation>();
+
+        var unseen = await _context.News
+            .AsNoTracking()
+            .Include(n => n.Tag)
+            .Include(n => n.DetailNews)
+            .Where(n => n.DetailNews != null &&
+                        !_context.UserNews.Any(un =>
+                            un.IdUser == userId &&
+                            un.IdNews == n.IdNews &&
+                            un.Seen))
+            .OrderBy(_ => EF.Functions.Random())
+            .Take(4)
+            .ToListAsync(cancellationToken);
+
+        if (unseen.Count < 4)
+        {
+            var ids = unseen.Select(x => x.IdNews).ToHashSet();
+            var fallback = await _context.News
+                .AsNoTracking()
+                .Include(n => n.Tag)
+                .Include(n => n.DetailNews)
+                .Where(n => n.DetailNews != null && !ids.Contains(n.IdNews))
+                .OrderBy(_ => EF.Functions.Random())
+                .Take(4 - unseen.Count)
+                .ToListAsync(cancellationToken);
+            unseen.AddRange(fallback);
+        }
+
+        foreach (var news in unseen)
+        {
+            output.Add(new PersonalizedRecommendation(
+                news,
+                "Exploration",
+                0,
+                true));
+        }
+
+        return output;
+    }
+
     private async Task<PersonalizedRecommendation?> SearchPreferenceStoryAsync(
         int userId,
         string preferenceName,
         int idTag,
         int preferenceWeight,
         string personalizationContext,
+        IReadOnlyList<(string Keyword, int Weight)> interestTerms,
         bool isSupplemental,
         HashSet<string> blockedUrls,
         HashSet<string> blockedTitles,
@@ -912,22 +1162,36 @@ public class RecommendationEngine
         if (_llmService == null || _newsIngest == null)
             return null;
 
+        var relatedTerms = interestTerms
+            .Where(x => !string.Equals(x.Keyword, preferenceName, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(x => x.Weight)
+            .Take(3)
+            .Select(x => x.Keyword)
+            .ToList();
+
         for (var attempt = 1; attempt <= 2; attempt++)
         {
-            // Search the dedicated News category instead of the generic web category.
-            // The preference is intentionally kept as the core query; the existing
-            // personalization context still influences which preferences are searched
-            // first through their learned weight and interaction ordering.
-            var searchQuery = attempt == 1
-                ? $"{preferenceName} latest current news"
-                : $"{preferenceName} latest current news different story";
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var searchQuery = $"{preferenceName} latest current news";
+
+            // First pass: use learned interests to improve relevance, but keep the
+            // explicit preference as the primary subject of the search.
+            // Second pass: remove the cross-interest terms and search the preference
+            // alone so the fallback cannot accidentally become another interest's news.
+            if (attempt == 1 && relatedTerms.Count > 0)
+                searchQuery += " " + string.Join(" ", relatedTerms.Take(2));
+
+            if (attempt > 1)
+                searchQuery += " different story";
 
             var results = await _llmService.SearchNewsAsync(
                 searchQuery,
-                maxResults: 6,
-                cancellationToken: cancellationToken);
+                maxResults: 8,
+                cancellationToken: cancellationToken,
+                startingPage: (attempt - 1) * 3 + 1);
 
-            var candidate = results
+            var candidates = results
                 .Select(r => (
                     Title: r.Title?.Trim() ?? string.Empty,
                     Url: NormalizeUrl(r.Url),
@@ -935,25 +1199,33 @@ public class RecommendationEngine
                 .Where(r =>
                     !string.IsNullOrWhiteSpace(r.Url) &&
                     !blockedUrls.Contains(r.Url) &&
-                    (string.IsNullOrWhiteSpace(r.Title) ||
-                     !blockedTitles.Contains(NormalizeTitle(r.Title))))
+                    LooksLikeValidNewsCandidate(r.Title, r.Url, r.Snippet))
                 .GroupBy(r => r.Url, StringComparer.OrdinalIgnoreCase)
                 .Select(g => g.First())
-                .FirstOrDefault();
+                .ToList();
 
-            if (string.IsNullOrWhiteSpace(candidate.Url))
+            if (candidates.Count == 0)
                 continue;
 
-            var summary = !string.IsNullOrWhiteSpace(candidate.Snippet)
-                ? candidate.Snippet
-                : candidate.Title;
+            // Just For You is preference-driven, not category-driven. Prefer a result
+            // whose title/snippet explicitly matches the requested preference or one of
+            // the user's learned keywords. If no such match exists, keep the fallback
+            // inside this preference query rather than selecting a result based on an
+            // unrelated global keyword.
+            var selected = SelectBestPreferenceCandidate(
+                candidates,
+                preferenceName,
+                interestTerms);
+
+            if (string.IsNullOrWhiteSpace(selected.Url))
+                selected = candidates[Random.Shared.Next(candidates.Count)];
 
             try
             {
                 var news = await _newsIngest.SaveOrUpdateNewsAsync(
-                    candidate.Url,
-                    summary,
-                    candidate.Title,
+                    selected.Url,
+                    string.IsNullOrWhiteSpace(selected.Snippet) ? selected.Title : selected.Snippet,
+                    selected.Title,
                     idTag,
                     isSfw: true,
                     secureLink: true,
@@ -964,21 +1236,10 @@ public class RecommendationEngine
                     imageUrl: null,
                     additionalSourcesJson: null);
 
-                blockedUrls.Add(candidate.Url);
-                if (!string.IsNullOrWhiteSpace(candidate.Title))
-                    blockedTitles.Add(NormalizeTitle(candidate.Title));
+                blockedUrls.Add(selected.Url);
+                blockedTitles.Add(NormalizeTitle(selected.Title));
 
-                // Find and persist a direct image immediately after selecting the article.
-                try
-                {
-                    await EnsureNewsImageAsync(news.IdNews, cancellationToken);
-                }
-                catch (Exception imageEx)
-                {
-                    _logger?.LogWarning(imageEx,
-                        "Could not obtain personalized image for News {NewsId}",
-                        news.IdNews);
-                }
+                await EnsureNewsImageAsync(news.IdNews, cancellationToken);
 
                 return new PersonalizedRecommendation(
                     await _context.News
@@ -996,6 +1257,269 @@ public class RecommendationEngine
         }
 
         return null;
+    }
+
+    private static (string Title, string Url, string Snippet) SelectBestPreferenceCandidate(
+        IReadOnlyList<(string Title, string Url, string Snippet)> candidates,
+        string preferenceName,
+        IReadOnlyList<(string Keyword, int Weight)> interestTerms)
+    {
+        if (candidates.Count == 0)
+            return default;
+
+        var preference = preferenceName.Trim();
+
+        var relatedTerms = interestTerms
+            .Where(x => !string.Equals(x.Keyword, preference, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(x => x.Weight)
+            .Take(6)
+            .ToList();
+
+        var scored = candidates
+            .Select(candidate =>
+            {
+                var score = 0;
+
+                if (!string.IsNullOrWhiteSpace(preference))
+                {
+                    if (candidate.Title.Contains(preference, StringComparison.OrdinalIgnoreCase))
+                        score += 12;
+                    if (candidate.Snippet.Contains(preference, StringComparison.OrdinalIgnoreCase))
+                        score += 4;
+                }
+
+                foreach (var term in relatedTerms)
+                {
+                    if (candidate.Title.Contains(term.Keyword, StringComparison.OrdinalIgnoreCase))
+                        score += 3 * Math.Max(1, term.Weight);
+                    else if (candidate.Snippet.Contains(term.Keyword, StringComparison.OrdinalIgnoreCase))
+                        score += Math.Max(1, term.Weight);
+                }
+
+                return (candidate, score);
+            })
+            .Where(x => x.score > 0)
+            .OrderByDescending(x => x.score)
+            .ThenBy(_ => Random.Shared.Next())
+            .ToList();
+
+        return scored.Count > 0
+            ? scored[0].candidate
+            : default;
+    }
+
+    private async Task<List<(string Keyword, int Weight)>> GetUserInterestTermsAsync(
+        int userId,
+        CancellationToken cancellationToken)
+    {
+        var terms = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+        var preferences = await _context.UserPreferences
+            .AsNoTracking()
+            .Include(up => up.Preference)
+                .ThenInclude(p => p.Tag)
+            .Where(up => up.IdUser == userId && up.Preference != null)
+            .ToListAsync(cancellationToken);
+
+        foreach (var row in preferences)
+        {
+            var term = row.Preference?.Tag?.Name ?? row.Preference?.PreferenceName;
+            if (string.IsNullOrWhiteSpace(term) || row.Weight <= 0)
+                continue;
+
+            terms.TryGetValue(term.Trim(), out var current);
+            terms[term.Trim()] = current + row.Weight;
+        }
+
+        var keywords = await _context.UserInterestKeywords
+            .AsNoTracking()
+            .Where(k => k.IdUser == userId && k.Weight > 0)
+            .ToListAsync(cancellationToken);
+
+        foreach (var keyword in keywords)
+        {
+            if (string.IsNullOrWhiteSpace(keyword.Keyword))
+                continue;
+
+            var term = keyword.Keyword.Trim();
+            terms.TryGetValue(term, out var current);
+            terms[term] = current + keyword.Weight;
+        }
+
+        return terms
+            .Where(kv => kv.Value > 0)
+            .OrderByDescending(kv => kv.Value)
+            .ThenBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase)
+            .Take(30)
+            .Select(kv => (kv.Key, kv.Value))
+            .ToList();
+    }
+
+    public async Task RegisterSearchQueryAsync(
+        int userId,
+        string query,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(query))
+            return;
+
+        var terms = _llmService == null
+            ? new List<string>()
+            : await _llmService.ExtractInterestKeywordsAsync(
+                query,
+                query,
+                maxKeywords: 6,
+                cancellationToken: cancellationToken);
+
+        foreach (var term in terms)
+            await UpsertInterestKeywordAsync(userId, term, 1, cancellationToken);
+
+        await _context.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<News?> CacheSearchResultAsync(
+        string title,
+        string url,
+        string snippet,
+        string? category,
+        string? imageUrl,
+        CancellationToken cancellationToken = default)
+    {
+        if (_newsIngest == null || string.IsNullOrWhiteSpace(url))
+            return null;
+
+        var tagName = string.IsNullOrWhiteSpace(category) ? "Search" : category.Trim();
+        var tag = await _context.Tags
+            .FirstOrDefaultAsync(t => t.Name.ToLower() == tagName.ToLower(), cancellationToken);
+
+        if (tag == null)
+        {
+            tag = new Tag { Name = tagName };
+            _context.Tags.Add(tag);
+            await _context.SaveChangesAsync(cancellationToken);
+        }
+
+        var news = await _newsIngest.SaveOrUpdateNewsAsync(
+            NormalizeUrl(url),
+            string.IsNullOrWhiteSpace(snippet) ? title : snippet,
+            title,
+            tag.IdTag,
+            isSfw: true,
+            secureLink: true,
+            isAi: true,
+            newsDate: DateTime.UtcNow,
+            fullBodyText: null,
+            bodySource: "Unknown",
+            imageUrl: imageUrl,
+            additionalSourcesJson: null);
+
+        if (!string.IsNullOrWhiteSpace(imageUrl) && news.DetailNews != null)
+            news.DetailNews.ImageUrl = imageUrl.Trim();
+
+        await _context.SaveChangesAsync(cancellationToken);
+
+        return await _context.News
+            .AsNoTracking()
+            .Include(n => n.Tag)
+            .Include(n => n.DetailNews)
+            .FirstOrDefaultAsync(n => n.IdNews == news.IdNews, cancellationToken);
+    }
+
+    private async Task LearnFromNewsAsync(
+        int userId,
+        int newsId,
+        int signalDelta,
+        string? additionalContext = null)
+    {
+        var news = await _context.News
+            .AsNoTracking()
+            .Include(n => n.Tag)
+            .Include(n => n.DetailNews)
+            .FirstOrDefaultAsync(n => n.IdNews == newsId);
+
+        if (news == null)
+            return;
+
+        var baseText = string.Join(
+            "\n",
+            new[]
+            {
+                news.DetailNews?.Keyword,
+                news.DetailNews?.AiSummary,
+                news.DetailNews?.Context,
+                additionalContext
+            }.Where(x => !string.IsNullOrWhiteSpace(x)));
+
+        if (!string.IsNullOrWhiteSpace(baseText) && _llmService != null)
+        {
+            try
+            {
+                var keywords = await _llmService.ExtractInterestKeywordsAsync(
+                    news.DetailNews?.Keyword ?? "News",
+                    baseText,
+                    maxKeywords: 8,
+                    cancellationToken: CancellationToken.None);
+
+                foreach (var keyword in keywords)
+                    await UpsertInterestKeywordAsync(userId, keyword, signalDelta, CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogDebug(ex, "Could not learn keywords from News {NewsId}", newsId);
+            }
+        }
+
+        if (news.IdTag > 0 && signalDelta != 0)
+        {
+            var userPref = await _context.UserPreferences
+                .FirstOrDefaultAsync(
+                    up => up.IdUser == userId &&
+                          up.Preference != null &&
+                          up.Preference.IdTag == news.IdTag);
+
+            if (userPref != null)
+                userPref.Weight = Math.Clamp(userPref.Weight + signalDelta, 0, 100);
+        }
+    }
+
+    private async Task UpsertInterestKeywordAsync(
+        int userId,
+        string? keyword,
+        int delta,
+        CancellationToken cancellationToken)
+    {
+        keyword = keyword?.Trim();
+        if (string.IsNullOrWhiteSpace(keyword) || delta == 0)
+            return;
+
+        if (keyword.Length > 120)
+            keyword = keyword[..120].Trim();
+
+        var normalized = Regex.Replace(keyword, @"\s+", " ");
+
+        var row = await _context.UserInterestKeywords
+            .FirstOrDefaultAsync(
+                k => k.IdUser == userId && k.Keyword.ToLower() == normalized.ToLower(),
+                cancellationToken);
+
+        if (row == null)
+        {
+            // A negative signal should not create a brand-new positive interest.
+            if (delta <= 0)
+                return;
+
+            _context.UserInterestKeywords.Add(new UserInterestKeyword
+            {
+                IdUser = userId,
+                Keyword = normalized,
+                Weight = Math.Clamp(delta, 0, 100),
+                LastUpdatedAt = DateTime.UtcNow
+            });
+            return;
+        }
+
+        row.Weight = Math.Clamp(row.Weight + delta, 0, 100);
+        row.LastUpdatedAt = DateTime.UtcNow;
     }
 
     private async Task<string> BuildUserPersonalizationContextAsync(
@@ -1070,6 +1594,23 @@ public class RecommendationEngine
         else
             foreach (var preference in preferenceProfile)
                 sb.AppendLine($"- {preference}");
+
+        sb.AppendLine();
+        var learnedKeywords = await _context.UserInterestKeywords
+            .AsNoTracking()
+            .Where(k => k.IdUser == userId && k.Weight > 0)
+            .OrderByDescending(k => k.Weight)
+            .ThenBy(k => k.Keyword)
+            .Take(20)
+            .ToListAsync(cancellationToken);
+
+        sb.AppendLine();
+        sb.AppendLine("LEARNED INTEREST KEYWORDS (weighted):");
+        if (learnedKeywords.Count == 0)
+            sb.AppendLine("None recorded.");
+        else
+            foreach (var keyword in learnedKeywords)
+                sb.AppendLine($"- {keyword.Keyword} (weight {keyword.Weight})");
 
         sb.AppendLine();
         sb.AppendLine("ALL STORED INTERACTION COUNTS BY CATEGORY:");
@@ -1187,106 +1728,12 @@ public class RecommendationEngine
         int newsId,
         CancellationToken cancellationToken = default)
     {
-        var news = await _context.News
-            .Include(n => n.DetailNews)
-            .Include(n => n.Tag)
-            .FirstOrDefaultAsync(
-                n => n.IdNews == newsId,
-                cancellationToken);
-
-        if (news == null || news.DetailNews == null)
-            return null;
-
-        var detail = news.DetailNews;
-
-        // Already have a valid body.
-        if (!string.IsNullOrWhiteSpace(detail.FullBodyText))
-        {
-            if (detail.BodySource == "Original" ||
-                detail.BodySource == "AiGenerated")
-            {
-                return detail.FullBodyText;
-            }
-
-            // Old records: verify whether their existing text is usable.
-            if (!ArticleExtractionService.NeedsReExtraction(
-                    detail.FullBodyText))
-            {
-                if (detail.BodySource == "Unknown")
-                    detail.BodySource = "Original";
-
-                await _context.SaveChangesAsync(
-                    cancellationToken);
-
-                return detail.FullBodyText;
-            }
-        }
-
-        if (string.IsNullOrWhiteSpace(news.Hyperlink))
-            return null;
-
-        if (detail.BodySource == "Unavailable")
-        {
-            return null;
-        }
-
-        var title =
-            string.IsNullOrWhiteSpace(detail.Keyword)
-                ? "News article"
-                : detail.Keyword.Trim();
-
-        var category = news.Tag?.Name;
-
-        var originalSnippet =
-            !string.IsNullOrWhiteSpace(detail.AiSummary)
-                ? detail.AiSummary
-                : detail.Context;
-
-        _logger?.LogInformation(
-            "Obtaining article body for News {NewsId}: {Url}",
-            newsId,
-            news.Hyperlink);
-
-        var result =
-            await GetArticleBodyWithFallbackAsync(
-                title,
-                news.Hyperlink.Trim(),
-                originalSnippet,
-                category,
-                searchResults: null,
-                cancellationToken);
-
-        if (!string.IsNullOrWhiteSpace(result.BodyText))
-        {
-            detail.FullBodyText = result.BodyText;
-            detail.BodySource = result.BodySource;
-            detail.AdditionalSourcesJson = result.AdditionalSourcesJson;
-
-            await _context.SaveChangesAsync(
-                cancellationToken);
-
-            _logger?.LogInformation(
-                "Stored {BodySource} article body for News {NewsId}: {Length} characters",
-                result.BodySource,
-                newsId,
-                result.BodyText.Length);
-
-            return result.BodyText;
-        }
-
-        // Don't keep a corrupted previous body around.
-        detail.FullBodyText = null;
-        detail.BodySource = "Unavailable";
-
-        await _context.SaveChangesAsync(
-            cancellationToken);
-
-        _logger?.LogWarning(
-            "No article body could be obtained or generated for News {NewsId}",
-            newsId);
-
-        return null;
+        // Compatibility wrapper retained for older callers. This method NEVER returns
+        // or stores the original publisher article body. It now delegates exclusively to
+        // the original NuctiusNow AI synthesis pipeline.
+        return await EnsureAiGeneratedArticleAsync(newsId, cancellationToken);
     }
+
     private static bool IsKnownProtectedSource(Uri uri)
     {
         var host = uri.Host.ToLowerInvariant();
@@ -1443,6 +1890,8 @@ public class RecommendationEngine
         var userNews = await _context.UserNews
             .FirstOrDefaultAsync(un => un.IdUser == userId && un.IdNews == newsId);
 
+        var meaningfulRead = timeSpentSeconds >= 120;
+
         if (userNews == null)
         {
             userNews = new UserNews
@@ -1450,7 +1899,8 @@ public class RecommendationEngine
                 IdUser = userId,
                 IdNews = newsId,
                 Seen = true,
-                Interest = timeSpentSeconds >= 120,
+                Interest = meaningfulRead,
+                Reaction = 0,
                 DateSeen = DateTime.UtcNow
             };
             _context.UserNews.Add(userNews);
@@ -1459,9 +1909,12 @@ public class RecommendationEngine
         {
             userNews.Seen = true;
             userNews.DateSeen = DateTime.UtcNow;
-            if (timeSpentSeconds >= 120)
+            if (meaningfulRead && userNews.Reaction >= 0)
                 userNews.Interest = true;
         }
+
+        if (meaningfulRead)
+            await LearnFromNewsAsync(userId, newsId, 2);
 
         await _context.SaveChangesAsync();
     }
@@ -1487,8 +1940,8 @@ public class RecommendationEngine
             ?? new List<(string Title, string Url, string Snippet)>();
 
         // Article generation needs factual material, not only search-result snippets.
-        // If no existing search results were supplied, perform one additional
-        // News-category search to gather independent sources.
+        // Use the dedicated News category to discover several independent publishers,
+        // then try to read the actual article body from each candidate.
         if (sources.Count == 0 && _llmService != null)
         {
             var query = string.IsNullOrWhiteSpace(category)
@@ -1516,60 +1969,37 @@ public class RecommendationEngine
         }
 
         var originalHost = string.Empty;
-
-        if (Uri.TryCreate(
-                sourceUrl,
-                UriKind.Absolute,
-                out var originalUri))
-        {
+        if (Uri.TryCreate(sourceUrl, UriKind.Absolute, out var originalUri))
             originalHost = originalUri.Host;
-        }
 
         var evidenceBlocks = new List<string>();
-
-        // ---------------------------------------------------------
-        // Initial search context
-        // ---------------------------------------------------------
         if (!string.IsNullOrWhiteSpace(originalSnippet))
         {
-            evidenceBlocks.Add($"""
-INITIAL SEARCH CONTEXT:
-{originalSnippet.Trim()}
-""");
+            evidenceBlocks.Add(
+                $"INITIAL SEARCH CONTEXT:\n{originalSnippet.Trim()}");
         }
 
-        // ---------------------------------------------------------
-        // Primary source
-        // ---------------------------------------------------------
+        // First try to read the selected news page itself. This gives the writer a
+        // factual base even when secondary search snippets are sparse or repetitive.
         if (_llmService != null &&
-            Uri.TryCreate(
-                sourceUrl,
-                UriKind.Absolute,
-                out var primaryUri) &&
+            Uri.TryCreate(sourceUrl, UriKind.Absolute, out var primaryUri) &&
             !ArticleExtractionService.IsKnownNonArticlePage(primaryUri))
         {
             try
             {
-                var primaryBody =
-                    await _llmService.ExtractArticleBodyTextAsync(
-                        sourceUrl,
-                        cancellationToken);
+                var primaryBody = await _llmService.ExtractArticleBodyTextAsync(
+                    sourceUrl,
+                    cancellationToken);
 
                 if (!string.IsNullOrWhiteSpace(primaryBody) &&
                     primaryBody.Length >= 400)
                 {
                     var boundedPrimary = primaryBody.Trim();
-
                     if (boundedPrimary.Length > 6500)
                         boundedPrimary = boundedPrimary[..6500];
 
-                    evidenceBlocks.Add($"""
-PRIMARY VERIFIED NEWS SOURCE:
-Title: {title}
-URL: {sourceUrl}
-Article text:
-{boundedPrimary}
-""");
+                    evidenceBlocks.Add(
+                        $"PRIMARY VERIFIED NEWS SOURCE:\nTitle: {title}\nURL: {sourceUrl}\nArticle text:\n{boundedPrimary}");
                 }
             }
             catch (OperationCanceledException)
@@ -1585,32 +2015,19 @@ Article text:
             }
         }
 
-        // ---------------------------------------------------------
-        // Additional independent sources
-        // ---------------------------------------------------------
         var additionalSources = new List<ArticleSource>();
-
-        var usedHosts =
-            new HashSet<string>(
-                StringComparer.OrdinalIgnoreCase);
+        var usedHosts = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var result in sources)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var normalizedUrl =
-                NormalizeUrl(result.Url);
-
+            var normalizedUrl = NormalizeUrl(result.Url);
             if (string.IsNullOrWhiteSpace(normalizedUrl))
                 continue;
 
-            if (!Uri.TryCreate(
-                    normalizedUrl,
-                    UriKind.Absolute,
-                    out var resultUri))
-            {
+            if (!Uri.TryCreate(normalizedUrl, UriKind.Absolute, out var resultUri))
                 continue;
-            }
 
             if (!string.Equals(
                     resultUri.Scheme,
@@ -1624,39 +2041,32 @@ Article text:
                 continue;
             }
 
-            // Do not use the original article again.
-            if (string.Equals(
-                    normalizedUrl,
-                    NormalizeUrl(sourceUrl),
+            if (normalizedUrl.Equals(
+                    sourceUrl,
                     StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
 
             var host = resultUri.Host;
-
-            // Do not use another URL from the same publisher as the original source.
             if (!string.IsNullOrWhiteSpace(originalHost) &&
-                string.Equals(
-                    host,
+                host.Equals(
                     originalHost,
                     StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
 
-            // Only one source per publisher.
+            // One source per publisher prevents one site from dominating the article.
             if (!usedHosts.Add(host))
                 continue;
 
             string? articleBody = null;
-
             try
             {
-                articleBody =
-                    await _llmService!.ExtractArticleBodyTextAsync(
-                        normalizedUrl,
-                        cancellationToken);
+                articleBody = await _llmService!.ExtractArticleBodyTextAsync(
+                    normalizedUrl,
+                    cancellationToken);
             }
             catch (OperationCanceledException)
             {
@@ -1670,44 +2080,29 @@ Article text:
                     normalizedUrl);
             }
 
-            // -----------------------------------------------------
-            // Prefer verified article text
-            // -----------------------------------------------------
-            var usableBody =
-                !string.IsNullOrWhiteSpace(articleBody) &&
-                articleBody.Length >= 400
-                    ? articleBody.Trim()
-                    : null;
+            var usableBody = !string.IsNullOrWhiteSpace(articleBody) &&
+                             articleBody.Length >= 400
+                ? articleBody.Trim()
+                : null;
 
             if (usableBody != null)
             {
+                // Keep each source bounded so the local model receives independent
+                // evidence without an unbounded prompt.
                 if (usableBody.Length > 6500)
                     usableBody = usableBody[..6500];
 
-                evidenceBlocks.Add($"""
-VERIFIED NEWS SOURCE:
-Title: {result.Title}
-URL: {normalizedUrl}
-Article text:
-{usableBody}
-""");
+                evidenceBlocks.Add(
+                    $"VERIFIED NEWS SOURCE:\nTitle: {result.Title}\nURL: {normalizedUrl}\nArticle text:\n{usableBody}");
             }
-            // -----------------------------------------------------
-            // Otherwise use the search-result snippet
-            // -----------------------------------------------------
             else if (!string.IsNullOrWhiteSpace(result.Snippet))
             {
                 var snippet = result.Snippet.Trim();
-
                 if (snippet.Length > 1800)
                     snippet = snippet[..1800];
 
-                evidenceBlocks.Add($"""
-NEWS SOURCE SUMMARY:
-Title: {result.Title}
-URL: {normalizedUrl}
-Snippet: {snippet}
-""");
+                evidenceBlocks.Add(
+                    $"NEWS SOURCE SUMMARY:\nTitle: {result.Title}\nURL: {normalizedUrl}\nSnippet: {snippet}");
             }
             else
             {
@@ -1716,23 +2111,20 @@ Snippet: {snippet}
 
             additionalSources.Add(
                 new ArticleSource(
-                    string.IsNullOrWhiteSpace(result.Title)
-                        ? host
-                        : result.Title.Trim(),
+                    result.Title?.Trim() ?? host,
                     normalizedUrl,
                     GetSourceOwner(normalizedUrl)));
 
-            // Four independent publishers are enough for generation.
+            // Three independent publishers is enough for a strong article while
+            // keeping generation latency under control.
             if (additionalSources.Count >= 4)
                 break;
         }
 
-        var evidenceText = string.Join(
-            "\n\n==============================\n\n",
-            evidenceBlocks);
-
         return new ArticleEvidence(
-            evidenceText,
+            string.Join(
+                "\n\n==============================\n\n",
+                evidenceBlocks),
             additionalSources);
     }
 
@@ -1773,17 +2165,14 @@ Snippet: {snippet}
             CancellationToken cancellationToken)
     {
         if (_llmService == null)
-            return (null, "Unavailable", null);
+            return (null, "Unknown", null);
 
         if (Uri.TryCreate(sourceUrl, UriKind.Absolute, out var sourceUri) &&
             ArticleExtractionService.IsKnownNonArticlePage(sourceUri))
         {
-            _logger?.LogWarning("Skipping article generation for non-article URL: {Url}", sourceUrl);
-            return (null, "Unavailable", null);
+            return (null, "Unknown", null);
         }
 
-        // Generate the requested NuctiusNow article first from multiple independent sources.
-        // Direct extraction remains a fallback when the AI evidence route is unavailable.
         try
         {
             var evidence = await BuildArticleEvidenceAsync(
@@ -1794,26 +2183,23 @@ Snippet: {snippet}
                 searchResults,
                 cancellationToken);
 
-            if ((evidence.Sources.Count >= 1 || evidence.Text.Contains("PRIMARY VERIFIED NEWS SOURCE", StringComparison.OrdinalIgnoreCase)) && evidence.Text.Length >= 700)
-            {
-                var generated = await _llmService.GenerateOriginalArticleAsync(
-                    title,
-                    evidence.Text,
-                    category,
-                    cancellationToken);
+            if (string.IsNullOrWhiteSpace(evidence.Text) || evidence.Text.Length < 700)
+                return (null, "Unknown", null);
 
-                if (!string.IsNullOrWhiteSpace(generated))
-                {
-                    var json = evidence.Sources.Count == 0
-                        ? null
-                        : JsonSerializer.Serialize(evidence.Sources);
+            var generated = await _llmService.GenerateOriginalArticleAsync(
+                title,
+                evidence.Text,
+                category,
+                cancellationToken);
 
-                    return (
-                        generated.Trim(),
-                        "AiGenerated",
-                        json);
-                }
-            }
+            if (string.IsNullOrWhiteSpace(generated))
+                return (null, "Unknown", null);
+
+            var json = evidence.Sources.Count == 0
+                ? null
+                : JsonSerializer.Serialize(evidence.Sources);
+
+            return (generated.Trim(), "AiGenerated", json);
         }
         catch (OperationCanceledException)
         {
@@ -1821,197 +2207,134 @@ Snippet: {snippet}
         }
         catch (Exception ex)
         {
-            _logger?.LogWarning(ex, "AI article generation path failed for {Url}", sourceUrl);
+            _logger?.LogWarning(ex, "AI-only article generation path failed for {Url}", sourceUrl);
+            return (null, "Unknown", null);
         }
-
-        // Fallback to deterministic extraction for sources where the AI route cannot generate.
-        if (_articleExtractor != null)
-        {
-            try
-            {
-                var extraction = await _articleExtractor.ExtractAsync(
-                    sourceUrl,
-                    cancellationToken);
-
-                if (extraction.Success &&
-                    !string.IsNullOrWhiteSpace(extraction.Text) &&
-                    extraction.Text.Length >= 500)
-                {
-                    return (
-                        extraction.Text.Trim(),
-                        "Original",
-                        null);
-                }
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                _logger?.LogWarning(ex, "Original article extraction failed for {Url}", sourceUrl);
-            }
-        }
-
-        return (null, "Unavailable", null);
     }
 
     public async Task<string?> EnsureAiGeneratedArticleAsync(
-    int newsId,
-    CancellationToken cancellationToken = default)
+        int newsId,
+        CancellationToken cancellationToken = default)
     {
         var news = await _context.News
             .Include(n => n.DetailNews)
             .Include(n => n.Tag)
-            .FirstOrDefaultAsync(
-                n => n.IdNews == newsId,
-                cancellationToken);
+            .FirstOrDefaultAsync(n => n.IdNews == newsId, cancellationToken);
 
-        if (news == null || news.DetailNews == null)
-        {
+        if (news?.DetailNews == null)
             return null;
-        }
 
         var detail = news.DetailNews;
 
-        // Si ya existe un artículo generado por IA, utilizarlo.
-        if (detail.BodySource == "AiGenerated" &&
+        // Remove source text left by the old prototype. It must not be rendered or
+        // persisted as the article content anymore.
+        if (detail.BodySource.Equals("Original", StringComparison.OrdinalIgnoreCase))
+        {
+            detail.FullBodyText = null;
+            detail.AiSummary = null;
+            detail.BodySource = "Unknown";
+            await _context.SaveChangesAsync(cancellationToken);
+        }
+
+        // Cached NuctiusNow article: return instantly and only regenerate the missing
+        // summary if necessary.
+        if (detail.BodySource.Equals("AiGenerated", StringComparison.OrdinalIgnoreCase) &&
             !string.IsNullOrWhiteSpace(detail.FullBodyText))
         {
-            var cleanedExistingArticle =
-                CleanGeneratedArticle(detail.FullBodyText);
+            var cleaned = CleanGeneratedArticle(detail.FullBodyText);
+            detail.FullBodyText = cleaned;
 
-            if (!string.Equals(
-                    cleanedExistingArticle,
-                    detail.FullBodyText,
-                    StringComparison.Ordinal))
+            if (string.IsNullOrWhiteSpace(detail.AiSummary))
             {
-                detail.FullBodyText = cleanedExistingArticle;
-
-                await _context.SaveChangesAsync(
+                var summary = await _llmService!.GenerateNewsSummaryAsync(
+                    detail.Keyword ?? "News article",
+                    cleaned,
+                    news.Tag?.Name,
                     cancellationToken);
 
-                _logger?.LogInformation(
-                    "Cleaned duplicated content from existing AI article for News {NewsId}",
-                    newsId);
+                if (!string.IsNullOrWhiteSpace(summary))
+                    detail.AiSummary = summary;
             }
 
+            await _context.SaveChangesAsync(cancellationToken);
             return detail.FullBodyText;
         }
 
-        if (_llmService == null)
-        {
-            _logger?.LogWarning(
-                "AI service unavailable for News {NewsId}",
-                newsId);
-
+        if (_llmService == null || string.IsNullOrWhiteSpace(news.Hyperlink))
             return null;
-        }
 
-        if (string.IsNullOrWhiteSpace(news.Hyperlink))
-        {
-            _logger?.LogWarning(
-                "News {NewsId} has no source URL.",
-                newsId);
-
+        if (Uri.TryCreate(news.Hyperlink.Trim(), UriKind.Absolute, out var sourceUri) &&
+            ArticleExtractionService.IsKnownNonArticlePage(sourceUri))
             return null;
-        }
 
-        if (Uri.TryCreate(news.Hyperlink.Trim(), UriKind.Absolute, out var newsUri) &&
-            ArticleExtractionService.IsKnownNonArticlePage(newsUri))
-        {
-            _logger?.LogWarning(
-                "News {NewsId} points to a known non-article page: {Url}",
-                newsId,
-                news.Hyperlink);
-
-            return null;
-        }
-
-        var title =
-            string.IsNullOrWhiteSpace(detail.Keyword)
-                ? "News article"
-                : detail.Keyword.Trim();
-
+        var title = string.IsNullOrWhiteSpace(detail.Keyword)
+            ? "News article"
+            : detail.Keyword.Trim();
         var category = news.Tag?.Name;
-
-        // Preferimos el resumen generado previamente.
-        var originalSnippet =
-            !string.IsNullOrWhiteSpace(detail.AiSummary)
-                ? detail.AiSummary
-                : detail.Context;
-
-        _logger?.LogInformation(
-            "Generating AI article for News {NewsId}: {Title}",
-            newsId,
-            title);
+        var originalContext = detail.Context;
 
         try
         {
-            // IMPORTANTE:
-            // No se intenta abrir la URL original.
-            // La IA trabaja solamente con información obtenida
-            // mediante búsquedas de otras fuentes.
+            // Article extraction happens inside BuildArticleEvidenceAsync only as transient
+            // factual input. The extracted source body is never stored in FullBodyText.
             var evidence = await BuildArticleEvidenceAsync(
                 title,
                 news.Hyperlink.Trim(),
-                originalSnippet,
+                originalContext,
                 category,
                 existingResults: null,
                 cancellationToken);
 
-            if ((!evidence.Text.Contains("PRIMARY VERIFIED NEWS SOURCE", StringComparison.OrdinalIgnoreCase) && evidence.Sources.Count < 1) ||
-                string.IsNullOrWhiteSpace(evidence.Text) ||
-                evidence.Text.Length < 700)
+            if (string.IsNullOrWhiteSpace(evidence.Text) || evidence.Text.Length < 700)
             {
-                _logger?.LogWarning(
-                    "Insufficient evidence to generate AI article for News {NewsId}",
-                    newsId);
-
                 detail.BodySource = "Unknown";
                 detail.FullBodyText = null;
-
                 await _context.SaveChangesAsync(cancellationToken);
-
                 return null;
             }
 
-            var generatedArticle =
-                await _llmService.GenerateOriginalArticleAsync(
-                    title,
-                    evidence.Text,
-                    category,
-                    cancellationToken);
+            var generatedArticle = await _llmService.GenerateOriginalArticleAsync(
+                title,
+                evidence.Text,
+                category,
+                cancellationToken);
 
             if (string.IsNullOrWhiteSpace(generatedArticle))
             {
-                _logger?.LogWarning(
-                    "LLM could not generate article for News {NewsId}",
-                    newsId);
-
                 detail.BodySource = "Unknown";
                 detail.FullBodyText = null;
-
                 await _context.SaveChangesAsync(cancellationToken);
-
                 return null;
             }
 
-            detail.FullBodyText =
-                CleanGeneratedArticle(generatedArticle);
+            generatedArticle = CleanGeneratedArticle(generatedArticle);
+            if (generatedArticle.Length < 700)
+            {
+                detail.BodySource = "Unknown";
+                detail.FullBodyText = null;
+                await _context.SaveChangesAsync(cancellationToken);
+                return null;
+            }
 
+            // The summary is generated from the newly written NuctiusNow article, not
+            // copied from the original search snippet.
+            var aiSummary = await _llmService.GenerateNewsSummaryAsync(
+                title,
+                generatedArticle,
+                category,
+                cancellationToken);
+
+            detail.FullBodyText = generatedArticle;
             detail.BodySource = "AiGenerated";
+            detail.AiSummary = string.IsNullOrWhiteSpace(aiSummary)
+                ? null
+                : aiSummary.Trim();
             detail.AdditionalSourcesJson = evidence.Sources.Count == 0
                 ? null
                 : JsonSerializer.Serialize(evidence.Sources);
 
             await _context.SaveChangesAsync(cancellationToken);
 
-            _logger?.LogInformation(
-                "AI article generated and stored for News {NewsId}. Length={Length}",
-                newsId,
-                detail.FullBodyText.Length);
-
             return detail.FullBodyText;
         }
         catch (OperationCanceledException)
@@ -2020,11 +2343,7 @@ Snippet: {snippet}
         }
         catch (Exception ex)
         {
-            _logger?.LogError(
-                ex,
-                "Failed to generate AI article for News {NewsId}",
-                newsId);
-
+            _logger?.LogError(ex, "Failed to generate original article for News {NewsId}", newsId);
             return null;
         }
     }

@@ -13,7 +13,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
-namespace NuctiusNow.Services;
+namespace NuctiusNow.LocalLlmServices;
 
 public interface ILocalLlmService
 {
@@ -22,8 +22,20 @@ public interface ILocalLlmService
     Task<List<string?>> SummarizeBatchAsync(List<string> texts, int maxTokens = 220);
     Task<List<double?>> BatchScoreAsync(string userProfile, List<string> candidates);
     Task<List<(string Title, string Url, string Snippet)>> SearchWebAsync(string query, int maxResults = 5, CancellationToken cancellationToken = default);
-    Task<List<(string Title, string Url, string Snippet)>> SearchNewsAsync(string query, int maxResults = 5, CancellationToken cancellationToken = default);
+    Task<List<(string Title, string Url, string Snippet)>> SearchNewsAsync(string query, int maxResults = 5, CancellationToken cancellationToken = default, int startingPage = 1);
     Task<string?> ExtractArticleBodyTextAsync(string articleUrl, CancellationToken cancellationToken = default);
+
+    Task<string?> GenerateNewsSummaryAsync(
+        string title,
+        string evidence,
+        string? category = null,
+        CancellationToken cancellationToken = default);
+
+    Task<List<string>> ExtractInterestKeywordsAsync(
+        string title,
+        string context,
+        int maxKeywords = 8,
+        CancellationToken cancellationToken = default);
 
     Task<string?> GenerateOriginalArticleAsync(
         string title,
@@ -88,8 +100,11 @@ public class LocalLlmService : ILocalLlmService
             "LocalLlmService initialized. Configured model hint: {ModelHint}",
             string.IsNullOrWhiteSpace(_configuredModelHint) ? "(auto-detect loaded model)" : _configuredModelHint);
 
+        // Always normalize the configured chat endpoint to LM Studio's native
+        // /api/v1/chat route. This also protects against an old configuration
+        // that still contains /v1/completions.
         _chatEndpoint = !string.IsNullOrWhiteSpace(chatEndpointFromConfig)
-            ? chatEndpointFromConfig!
+            ? BuildNativeChatEndpoint(chatEndpointFromConfig!)
             : BuildNativeChatEndpoint(_endpoint);
 
         _semaphore = new SemaphoreSlim(_maxConcurrency, _maxConcurrency);
@@ -100,33 +115,19 @@ public class LocalLlmService : ILocalLlmService
     {
         if (string.IsNullOrWhiteSpace(text)) return string.Empty;
 
-        var client = _httpFactory.CreateClient();
         var prompt = $"Summarize the following news article in one short paragraph (max {maxTokens} characters):\n\n{text}";
 
-        var payload = new Dictionary<string, object?>()
-        {
-            ["prompt"] = prompt,
-            ["max_tokens"] = maxTokens
-        };
-
-        payload["model"] = await ResolveLoadedModelKeyAsync(CancellationToken.None);
-
-        await _semaphore.WaitAsync();
         try
         {
-            using var resp = await client.PostAsJsonAsync(_endpoint, payload, _jsonOptions);
-            if (!resp.IsSuccessStatusCode) return null;
-
-            var respText = await ParseResponseTextAsync(resp.Content);
-            return respText?.Trim();
+            return (await CallPlainNativeChatAsync(
+                prompt,
+                maxOutputTokens: Math.Clamp(maxTokens, 32, 512),
+                temperature: 0.1,
+                CancellationToken.None))?.Trim();
         }
         catch
         {
             return null;
-        }
-        finally
-        {
-            _semaphore.Release();
         }
     }
 
@@ -134,40 +135,30 @@ public class LocalLlmService : ILocalLlmService
     {
         if (string.IsNullOrWhiteSpace(candidateText)) return null;
 
-        var client = _httpFactory.CreateClient();
         var prompt = $"Given the user profile or preferences:\n{userProfile}\n\nRate the relevance of this candidate news article on a scale 0-100 and only return the numeric score:\n{candidateText}";
-        var payload = new Dictionary<string, object?>()
-        {
-            ["prompt"] = prompt,
-            ["max_tokens"] = 10
-        };
 
-        payload["model"] = await ResolveLoadedModelKeyAsync(CancellationToken.None);
-
-        await _semaphore.WaitAsync();
         try
         {
-            using var resp = await client.PostAsJsonAsync(_endpoint, payload, _jsonOptions);
-            if (!resp.IsSuccessStatusCode) return null;
+            var resultText = await CallPlainNativeChatAsync(
+                prompt,
+                maxOutputTokens: 10,
+                temperature: 0,
+                CancellationToken.None);
 
-            var resultText = await ParseResponseTextAsync(resp.Content);
             if (string.IsNullOrWhiteSpace(resultText)) return null;
 
             var txt = new string(resultText.Where(c => char.IsDigit(c) || c == '.' || c == ',').ToArray()).Replace(',', '.');
-            if (double.TryParse(txt, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var score))
-            {
-                return Math.Clamp(score, 0.0, 100.0);
-            }
-
-            return null;
+            return double.TryParse(
+                txt,
+                System.Globalization.NumberStyles.Any,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out var score)
+                ? Math.Clamp(score, 0.0, 100.0)
+                : null;
         }
         catch
         {
             return null;
-        }
-        finally
-        {
-            _semaphore.Release();
         }
     }
 
@@ -176,64 +167,52 @@ public class LocalLlmService : ILocalLlmService
         var results = new List<string?>();
         if (texts == null || texts.Count == 0) return results;
 
-        for (int i = 0; i < texts.Count; i += _batchSize)
+        for (var i = 0; i < texts.Count; i += _batchSize)
         {
             var batch = texts.Skip(i).Take(_batchSize).ToList();
             var marker = "<|SUMMARY|>";
             var sb = new StringBuilder();
             sb.AppendLine($"For each article below, return one short paragraph summary (max {maxTokens} characters).\nOutput the summaries in the same order separated exactly by the token {marker} with no extra commentary.");
             sb.AppendLine();
-            for (int idx = 0; idx < batch.Count; idx++)
+
+            for (var idx = 0; idx < batch.Count; idx++)
             {
                 sb.AppendLine($"Article {idx + 1}:");
                 sb.AppendLine(batch[idx]);
                 sb.AppendLine();
             }
 
-            var payload = new { prompt = sb.ToString(), max_tokens = maxTokens };
-            var client = _httpFactory.CreateClient();
-
-            await _semaphore.WaitAsync();
             try
             {
-                using var resp = await client.PostAsJsonAsync(_endpoint, payload, _jsonOptions);
-                if (!resp.IsSuccessStatusCode)
-                {
-                    results.AddRange(batch.Select(_ => (string?)null));
-                    continue;
-                }
+                var text = await CallPlainNativeChatAsync(
+                    sb.ToString(),
+                    maxOutputTokens: Math.Clamp(maxTokens * batch.Count, 64, 2000),
+                    temperature: 0.1,
+                    CancellationToken.None) ?? string.Empty;
 
-                var text = await ParseResponseTextAsync(resp.Content) ?? string.Empty;
+                _logger.LogInformation(
+                    "LocalLlmService.SummarizeBatchAsync raw response: {ResponseText}",
+                    text);
 
-                try
-                {
-                    if (_logger != null)
-                        _logger.LogInformation("LocalLlmService.SummarizeBatchAsync raw response: {ResponseText}", text);
-                }
-                catch
-                {
-                }
-
-                var parts = text.Split(new[] { marker }, StringSplitOptions.RemoveEmptyEntries).Select(p => p.Trim()).ToList();
+                var parts = text
+                    .Split(new[] { marker }, StringSplitOptions.RemoveEmptyEntries)
+                    .Select(p => p.Trim())
+                    .ToList();
 
                 if (parts.Count != batch.Count)
                 {
-                    parts = Regex.Split(text.Trim(), "\n\n+").Select(p => p.Trim()).Where(p => p.Length > 0).ToList();
+                    parts = Regex.Split(text.Trim(), "\\n\\n+")
+                        .Select(p => p.Trim())
+                        .Where(p => p.Length > 0)
+                        .ToList();
                 }
 
-                for (int j = 0; j < batch.Count; j++)
-                {
-                    if (j < parts.Count) results.Add(parts[j]);
-                    else results.Add(null);
-                }
+                for (var j = 0; j < batch.Count; j++)
+                    results.Add(j < parts.Count ? parts[j] : null);
             }
             catch
             {
                 results.AddRange(batch.Select(_ => (string?)null));
-            }
-            finally
-            {
-                _semaphore.Release();
             }
         }
 
@@ -367,7 +346,8 @@ SEARCH TASK:
     public async Task<List<(string Title, string Url, string Snippet)>> SearchNewsAsync(
         string query,
         int maxResults = 5,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        int startingPage = 1)
     {
         var results = new List<(string Title, string Url, string Snippet)>();
         if (string.IsNullOrWhiteSpace(query))
@@ -380,7 +360,7 @@ SEARCH TASK:
         // a single result page.
         foreach (var timeRange in new[] { "month", "year" })
         {
-            for (var page = 1; page <= 3 && results.Count < maxResults; page++)
+            for (var page = Math.Max(1, startingPage); page < Math.Max(1, startingPage) + 3 && results.Count < maxResults; page++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
@@ -688,10 +668,10 @@ Find ONE relevant editorial/news photograph.
 Do NOT return an article page, product page, download page, search page, thumbnail page,
 or an explanation.
 Return ONLY JSON:
-{{"imageUrl":"https://example.com/image.jpg"}}
+{"imageUrl":"https://example.com/image.jpg"}
 
 If no direct image URL is available:
-{{"imageUrl":""}}
+{"imageUrl":""}
 """;
 
         try
@@ -855,13 +835,16 @@ VERIFIED NEWS EVIDENCE:
 WRITING REQUIREMENTS:
 - Produce one complete article, not a summary and not a list.
 - Use a clear news structure: lead, relevant developments, context, and closing paragraph.
-- Write 600 to 1000 words when the evidence supports that level of detail.
+- Write 500 to 900 words when the evidence supports that level of detail.
 - Use 6 to 10 substantive paragraphs.
 - Every paragraph must add new information.
-- Combine corroborated facts from the evidence into a coherent narrative.
-- Use original wording; do not copy sentences from the evidence.
+- Use the source material only to understand and verify facts. Express every sentence in completely original wording.
+- Do not copy, reproduce, closely paraphrase, or reconstruct the wording of any source.
+- The requested result is a new explanatory NuctiusNow article, NOT the extracted source article.
+- Treat extracted source text as transient factual evidence only; never reproduce it as the answer.
+- Focus on what happened, who or what is involved, what changed, why it matters, and the relevant context supported by the evidence.
 - Do not invent names, dates, numbers, quotes, motives, causes or events.
-- Never create a direct quotation unless that quotation is explicitly present in the evidence.
+- Never create a direct quotation unless that quotation is explicitly present in the evidence and is genuinely necessary.
 - Do not mention the evidence, the web search, SearXNG, the AI, the model, prompts, or article-generation process.
 - Do not discuss whether the original publisher was accessible.
 - Do not refuse the task merely because one source is incomplete. Use the factual material that is actually present.
@@ -873,37 +856,13 @@ If the evidence truly contains no usable facts, return exactly:
 [INSUFFICIENT_EVIDENCE]
 """;
 
-        var payload = new Dictionary<string, object?>
-        {
-            ["prompt"] = prompt,
-            ["max_tokens"] = 1800,
-            ["temperature"] = 0.15
-        };
-
-        payload["model"] = await ResolveLoadedModelKeyAsync(cancellationToken);
-
-        var client = _httpFactory.CreateClient();
-        client.Timeout = TimeSpan.FromMinutes(5);
-
-        await _semaphore.WaitAsync(cancellationToken);
-
         try
         {
-            using var response = await client.PostAsJsonAsync(
-                _endpoint,
-                payload,
-                _jsonOptions,
-                cancellationToken);
-
-            if (!response.IsSuccessStatusCode)
-            {
-                _logger.LogWarning(
-                    "GenerateOriginalArticleAsync: LLM returned HTTP {StatusCode}",
-                    (int)response.StatusCode);
-                return null;
-            }
-
-            var article = (await ParseResponseTextAsync(response.Content) ?? string.Empty).Trim();
+            var article = (await CallPlainNativeChatAsync(
+                prompt,
+                maxOutputTokens: 1800,
+                temperature: 0.15,
+                cancellationToken) ?? string.Empty).Trim();
 
             var fenced = Regex.Match(
                 article,
@@ -929,7 +888,7 @@ If the evidence truly contains no usable facts, return exactly:
                 return null;
             }
 
-            if (article.Length < 900)
+            if (article.Length < 700)
             {
                 _logger.LogWarning(
                     "GenerateOriginalArticleAsync: generated article was too short ({Length} chars) for '{Title}'",
@@ -957,10 +916,190 @@ If the evidence truly contains no usable facts, return exactly:
                 title);
             return null;
         }
-        finally
+    }
+
+
+    public async Task<string?> GenerateNewsSummaryAsync(
+        string title,
+        string evidence,
+        string? category = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(title) || string.IsNullOrWhiteSpace(evidence))
+            return null;
+
+        var categoryText = string.IsNullOrWhiteSpace(category) ? "General" : category.Trim();
+        var prompt = $"""
+You are the NuctiusNow news summarization editor.
+
+Create ONE very short original summary of the news story below.
+
+TITLE:
+{title}
+
+CATEGORY:
+{categoryText}
+
+FACTUAL EVIDENCE:
+{evidence}
+
+Rules:
+- Summarize the story as a whole, not just one detail.
+- Explain in simple language what happened and the most important point.
+- Use only facts supported by the evidence.
+- Write 30 to 55 words.
+- Do not copy wording from any source.
+- Do not quote the source.
+- Do not mention sources, evidence, SearXNG, AI, prompts, or this task.
+- Do not produce a title or label.
+- Return ONLY the summary paragraph.
+""";
+
+        try
         {
-            _semaphore.Release();
+            var summary = (await CallPlainNativeChatAsync(
+                prompt,
+                maxOutputTokens: 180,
+                temperature: 0.05,
+                cancellationToken) ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(summary) || summary.StartsWith("[", StringComparison.Ordinal))
+                return null;
+
+            return summary.Length > 420 ? summary[..420].TrimEnd() : summary;
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "GenerateNewsSummaryAsync failed for '{Title}'", title);
+            return null;
+        }
+    }
+
+    public async Task<List<string>> ExtractInterestKeywordsAsync(
+        string title,
+        string context,
+        int maxKeywords = 8,
+        CancellationToken cancellationToken = default)
+    {
+        var fallback = ExtractInterestKeywordsFallback(title, context, maxKeywords);
+        if (string.IsNullOrWhiteSpace(title) && string.IsNullOrWhiteSpace(context))
+            return fallback;
+
+        maxKeywords = Math.Clamp(maxKeywords, 3, 12);
+        var prompt = $"""
+You are NuctiusNow's user-interest keyword extractor.
+
+From the news title and context below, identify {maxKeywords} or fewer concrete
+interests that a reader could reasonably care about in future news searches.
+
+TITLE:
+{title}
+
+CONTEXT:
+{context}
+
+Rules:
+- Return a JSON array of strings only.
+- Extract specific entities and durable topics, not generic words.
+- Preserve proper names and multi-word concepts.
+- Prefer useful terms such as companies, products, games, teams, people, technologies,
+  franchises, diseases, places, events, industries and major topics.
+- Avoid generic words such as news, article, today, update, information, report, latest.
+- Do not invent an entity that is not supported by the supplied text.
+""";
+
+        try
+        {
+            var raw = (await CallPlainNativeChatAsync(
+                prompt,
+                maxOutputTokens: 220,
+                temperature: 0,
+                cancellationToken) ?? string.Empty).Trim();
+            raw = Regex.Replace(raw, @"^```(?:json)?\s*|\s*```$", string.Empty,
+                RegexOptions.IgnoreCase | RegexOptions.Singleline).Trim();
+
+            try
+            {
+                using var doc = JsonDocument.Parse(raw);
+                if (doc.RootElement.ValueKind == JsonValueKind.Array)
+                {
+                    var values = doc.RootElement.EnumerateArray()
+                        .Where(x => x.ValueKind == JsonValueKind.String)
+                        .Select(x => NormalizeInterestKeyword(x.GetString()))
+                        .Where(x => !string.IsNullOrWhiteSpace(x))
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .Take(maxKeywords)
+                        .ToList();
+
+                    return values.Count >= 2 ? values : fallback;
+                }
+            }
+            catch (JsonException)
+            {
+                // Use deterministic extraction below.
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "ExtractInterestKeywordsAsync failed for '{Title}'", title);
+        }
+
+        return fallback;
+    }
+
+    private static List<string> ExtractInterestKeywordsFallback(
+        string title,
+        string context,
+        int maxKeywords)
+    {
+        var combined = $"{title} {context}";
+        var stop = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "the", "and", "for", "with", "from", "this", "that", "about", "into", "after",
+            "before", "over", "under", "news", "article", "latest", "current", "update",
+            "information", "report", "says", "said", "will", "would", "could", "have", "has",
+            "are", "was", "were", "their", "they", "them", "been", "being", "what", "when",
+            "where", "which", "while", "than", "also", "more", "some", "new", "today"
+        };
+
+        var phrases = Regex.Matches(combined, @"\b[A-Z][\p{L}\p{N}_-]*(?:\s+[A-Z][\p{L}\p{N}_-]*){0,3}")
+            .Select(m => NormalizeInterestKeyword(m.Value))
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Where(x => x!.Length >= 2 && !stop.Contains(x!))
+            .ToList();
+
+        var words = Regex.Matches(combined.ToLowerInvariant(), @"[\p{L}\p{N}][\p{L}\p{N}_-]{2,}")
+            .Select(m => m.Value)
+            .Where(x => !stop.Contains(x))
+            .GroupBy(x => x, StringComparer.OrdinalIgnoreCase)
+            .OrderByDescending(g => g.Count())
+            .Select(g => g.Key)
+            .Take(maxKeywords * 2)
+            .ToList();
+
+        return phrases.Concat(words)
+            .Select(NormalizeInterestKeyword)
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(Math.Clamp(maxKeywords, 3, 12))
+            .ToList()!;
+    }
+
+    private static string NormalizeInterestKeyword(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return string.Empty;
+
+        var cleaned = Regex.Replace(value.Trim(), @"\s+", " ");
+        cleaned = cleaned.Trim(' ', ',', '.', ':', ';', '\"', '\'', '`', '[', ']');
+        return cleaned.Length > 120 ? cleaned[..120].Trim() : cleaned;
     }
 
     private static bool ContainsArticleRefusal(string text)
@@ -1180,36 +1319,13 @@ PAGE TEXT:
 {readableText}
 """;
 
-            var payload = new Dictionary<string, object?>
-            {
-                ["prompt"] = prompt,
-                ["max_tokens"] = 5000
-            };
+            var extracted = (await CallPlainNativeChatAsync(
+                prompt,
+                maxOutputTokens: 5000,
+                temperature: 0,
+                cancellationToken) ?? string.Empty).Trim();
 
-            payload["model"] = await ResolveLoadedModelKeyAsync(CancellationToken.None);
-
-            var llmClient = _httpFactory.CreateClient();
-            llmClient.Timeout = TimeSpan.FromMinutes(5);
-
-            await _semaphore.WaitAsync(cancellationToken);
-            try
-            {
-                using var llmResponse = await llmClient.PostAsJsonAsync(
-                    _endpoint,
-                    payload,
-                    _jsonOptions,
-                    cancellationToken);
-
-                if (!llmResponse.IsSuccessStatusCode)
-                    return null;
-
-                var extracted = (await ParseResponseTextAsync(llmResponse.Content) ?? string.Empty).Trim();
-                return IsUsableArticleBody(extracted) ? extracted : null;
-            }
-            finally
-            {
-                _semaphore.Release();
-            }
+            return IsUsableArticleBody(extracted) ? extracted : null;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -1269,7 +1385,7 @@ PAGE TEXT:
         var results = new List<double?>();
         if (candidates == null || candidates.Count == 0) return results;
 
-        for (int i = 0; i < candidates.Count; i += _batchSize)
+        for (var i = 0; i < candidates.Count; i += _batchSize)
         {
             var batch = candidates.Skip(i).Take(_batchSize).ToList();
             var sb = new StringBuilder();
@@ -1278,36 +1394,38 @@ PAGE TEXT:
             sb.AppendLine("User profile:");
             sb.AppendLine(userProfile);
             sb.AppendLine();
-            for (int idx = 0; idx < batch.Count; idx++)
-            {
+
+            for (var idx = 0; idx < batch.Count; idx++)
                 sb.AppendLine($"{idx + 1}) {batch[idx]}");
-            }
 
-            var payload = new { prompt = sb.ToString(), max_tokens = 50 };
-            var client = _httpFactory.CreateClient();
-
-            await _semaphore.WaitAsync();
             try
             {
-                using var resp = await client.PostAsJsonAsync(_endpoint, payload, _jsonOptions);
-                if (!resp.IsSuccessStatusCode)
-                {
-                    results.AddRange(batch.Select(_ => (double?)null));
-                    continue;
-                }
+                var text = await CallPlainNativeChatAsync(
+                    sb.ToString(),
+                    maxOutputTokens: 64,
+                    temperature: 0,
+                    CancellationToken.None) ?? string.Empty;
 
-                var text = await ParseResponseTextAsync(resp.Content) ?? string.Empty;
-                var nums = Regex.Matches(text, "[0-9]+(?:\\.[0-9]+)?").Select(m => m.Value).ToList();
+                var nums = Regex.Matches(text, "[0-9]+(?:\\.[0-9]+)?")
+                    .Select(m => m.Value)
+                    .ToList();
 
                 if (nums.Count >= batch.Count)
                 {
-                    for (int j = 0; j < batch.Count; j++)
+                    for (var j = 0; j < batch.Count; j++)
                     {
-                        if (double.TryParse(nums[j].Replace(',', '.'), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var v))
+                        if (double.TryParse(
+                            nums[j].Replace(',', '.'),
+                            System.Globalization.NumberStyles.Any,
+                            System.Globalization.CultureInfo.InvariantCulture,
+                            out var v))
                         {
                             results.Add(Math.Clamp(v, 0.0, 100.0));
                         }
-                        else results.Add(null);
+                        else
+                        {
+                            results.Add(null);
+                        }
                     }
                 }
                 else
@@ -1319,13 +1437,91 @@ PAGE TEXT:
             {
                 results.AddRange(batch.Select(_ => (double?)null));
             }
-            finally
-            {
-                _semaphore.Release();
-            }
         }
 
         return results;
+    }
+
+    /// <summary>
+    /// Sends a normal generation request through LM Studio's native /api/v1/chat
+    /// endpoint. All non-tool LLM generation in NuctiusNow uses this path so it
+    /// matches the native response contract and returns the final assistant message
+    /// rather than a reasoning item.
+    /// </summary>
+    private async Task<string?> CallPlainNativeChatAsync(
+        string prompt,
+        int maxOutputTokens,
+        double temperature,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(prompt))
+            return null;
+
+        var modelKey = await ResolveLoadedModelKeyAsync(cancellationToken);
+
+        var payload = new Dictionary<string, object?>
+        {
+            ["model"] = modelKey,
+            ["input"] = prompt,
+            ["store"] = false,
+            ["temperature"] = temperature,
+            ["max_output_tokens"] = maxOutputTokens
+        };
+
+        var client = _httpFactory.CreateClient();
+        client.Timeout = TimeSpan.FromMinutes(5);
+
+        if (!string.IsNullOrWhiteSpace(_apiToken))
+        {
+            client.DefaultRequestHeaders.Authorization =
+                new AuthenticationHeaderValue("Bearer", _apiToken);
+        }
+
+        await _semaphore.WaitAsync(cancellationToken);
+        try
+        {
+            using var response = await client.PostAsJsonAsync(
+                _chatEndpoint,
+                payload,
+                _jsonOptions,
+                cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var errorText = await response.Content.ReadAsStringAsync(cancellationToken);
+                _logger.LogWarning(
+                    "LM Studio native generation failed: HTTP {StatusCode}. Response={Response}",
+                    (int)response.StatusCode,
+                    errorText.Length > 800 ? errorText[..800] : errorText);
+                return null;
+            }
+
+            var native = await ParseNativeChatResponseAsync(response.Content);
+            var message = native.Message?.Trim();
+
+            if (string.IsNullOrWhiteSpace(message))
+            {
+                _logger.LogWarning(
+                    "LM Studio native generation returned no final message. ToolCalls={ToolCalls}",
+                    native.ToolCalls.Count);
+                return null;
+            }
+
+            return message;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "LM Studio native generation request failed.");
+            return null;
+        }
+        finally
+        {
+            _semaphore.Release();
+        }
     }
 
     private static string BuildNativeChatEndpoint(string endpoint)
@@ -1829,13 +2025,50 @@ private async Task<NativeChatResponse> ParseNativeChatResponseAsync(
                     return contentProp.GetString();
             }
 
-            if (root.TryGetProperty("output", out var output) && output.ValueKind == System.Text.Json.JsonValueKind.Array && output.GetArrayLength() > 0)
+            if (root.TryGetProperty("output", out var output) &&
+                output.ValueKind == System.Text.Json.JsonValueKind.Array &&
+                output.GetArrayLength() > 0)
             {
-                var first = output[0];
-                if (first.TryGetProperty("content", out var oc) && oc.ValueKind == System.Text.Json.JsonValueKind.String)
-                    return oc.GetString();
-                if (first.TryGetProperty("data", out var od) && od.ValueKind == System.Text.Json.JsonValueKind.String)
-                    return od.GetString();
+                string? lastMessage = null;
+                string? firstContent = null;
+
+                foreach (var item in output.EnumerateArray())
+                {
+                    if (item.ValueKind != JsonValueKind.Object)
+                        continue;
+
+                    if (item.TryGetProperty("type", out var typeProp) &&
+                        typeProp.ValueKind == JsonValueKind.String &&
+                        string.Equals(typeProp.GetString(), "message", StringComparison.OrdinalIgnoreCase) &&
+                        item.TryGetProperty("content", out var messageContent) &&
+                        messageContent.ValueKind == JsonValueKind.String)
+                    {
+                        var value = messageContent.GetString();
+                        if (!string.IsNullOrWhiteSpace(value))
+                            lastMessage = value;
+                        continue;
+                    }
+
+                    if (firstContent == null &&
+                        item.TryGetProperty("content", out var genericContent) &&
+                        genericContent.ValueKind == JsonValueKind.String)
+                    {
+                        firstContent = genericContent.GetString();
+                    }
+
+                    if (firstContent == null &&
+                        item.TryGetProperty("data", out var dataContent) &&
+                        dataContent.ValueKind == JsonValueKind.String)
+                    {
+                        firstContent = dataContent.GetString();
+                    }
+                }
+
+                if (!string.IsNullOrWhiteSpace(lastMessage))
+                    return lastMessage;
+
+                if (!string.IsNullOrWhiteSpace(firstContent))
+                    return firstContent;
             }
 
             var sb = new StringBuilder();

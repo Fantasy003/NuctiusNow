@@ -628,6 +628,13 @@ public sealed class ArticleExtractionService : IAsyncDisposable
         if (blockedHosts.Contains(host, StringComparer.OrdinalIgnoreCase))
             return true;
 
+        // Explicitly reject the Bungie Destiny New Light landing/download area.
+        if (host.Equals("bungie.net", StringComparison.OrdinalIgnoreCase) &&
+            path.StartsWith("/7/en/destiny/", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
         var blockedPathTokens = new[]
         {
             "/download", "/downloads", "/store", "/shop", "/pricing", "/support",

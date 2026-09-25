@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using BCrypt.Net;
 using Microsoft.Extensions.Configuration;
 using System.Net.Http;

@@ -44,3 +44,5 @@ public class Preference
     // Navigation Properties
     public virtual ICollection<UserPreference> UserPreferences { get; set; } = new List<UserPreference>();
 }
+
+

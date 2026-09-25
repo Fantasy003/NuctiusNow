@@ -8,17 +8,32 @@ window.newsSearchScroll = {
         this._dotNetRef = dotNetRef;
 
         this._handler = function () {
-            const doc = document.documentElement;
-            const atBottom = window.innerHeight + window.scrollY >= doc.scrollHeight - 220;
-            if (atBottom && window.newsSearchScroll._dotNetRef && !window.newsSearchScroll._notificationPending) {
+            const documentElement = document.documentElement;
+            const body = document.body;
+            const scrollHeight = Math.max(
+                documentElement ? documentElement.scrollHeight : 0,
+                body ? body.scrollHeight : 0);
+            const atBottom = window.innerHeight + window.scrollY >= scrollHeight - 240;
+
+            if (atBottom &&
+                window.newsSearchScroll._dotNetRef &&
+                !window.newsSearchScroll._notificationPending) {
                 window.newsSearchScroll._notificationPending = true;
-                window.newsSearchScroll._dotNetRef.invokeMethodAsync('OnSearchReachedEnd')
+
+                window.newsSearchScroll._dotNetRef
+                    .invokeMethodAsync('OnSearchReachedEnd')
                     .catch(() => {})
-                    .finally(() => { window.newsSearchScroll._notificationPending = false; });
+                    .finally(() => {
+                        window.newsSearchScroll._notificationPending = false;
+                    });
             }
         };
 
         window.addEventListener('scroll', this._handler, { passive: true });
+
+        // Also check immediately after registration. This matters when the initial
+        // result set is shorter than one viewport and the user is already at the end.
+        setTimeout(this._handler, 250);
     },
 
     dispose: function () {
@@ -26,9 +41,10 @@ window.newsSearchScroll = {
             window.removeEventListener('scroll', this._handler);
             this._handler = null;
         }
-        if (this._dotNetRef) {
-            this._dotNetRef.dispose();
-            this._dotNetRef = null;
-        }
+
+        // Do NOT call dotNetRef.dispose() here. The DotNetObjectReference is owned
+        // and disposed by the Blazor component.
+        this._dotNetRef = null;
+        this._notificationPending = false;
     }
 };
