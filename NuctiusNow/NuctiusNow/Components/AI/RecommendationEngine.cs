@@ -1023,6 +1023,12 @@ public class RecommendationEngine
             return output;
 
         var interestTerms = await GetUserInterestTermsAsync(userId, cancellationToken);
+        var explicitPreferenceNames = distinctPreferences
+            .Select(x => x.Preference!.Tag?.Name ?? x.Preference!.PreferenceName ?? "News")
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
         var personalizationContext = await BuildUserPersonalizationContextAsync(userId, cancellationToken);
 
         var blockedUrls = (await _context.News
@@ -1055,6 +1061,7 @@ public class RecommendationEngine
                 userPreference.Weight,
                 personalizationContext,
                 interestTerms,
+                explicitPreferenceNames,
                 isSupplemental: false,
                 blockedUrls,
                 blockedTitles,
@@ -1081,6 +1088,7 @@ public class RecommendationEngine
                 userPreference.Weight,
                 personalizationContext,
                 interestTerms,
+                explicitPreferenceNames,
                 isSupplemental: true,
                 blockedUrls,
                 blockedTitles,
@@ -1154,6 +1162,7 @@ public class RecommendationEngine
         int preferenceWeight,
         string personalizationContext,
         IReadOnlyList<(string Keyword, int Weight)> interestTerms,
+        IReadOnlyList<string> explicitPreferenceNames,
         bool isSupplemental,
         HashSet<string> blockedUrls,
         HashSet<string> blockedTitles,
@@ -1162,25 +1171,59 @@ public class RecommendationEngine
         if (_llmService == null || _newsIngest == null)
             return null;
 
-        var relatedTerms = interestTerms
-            .Where(x => !string.Equals(x.Keyword, preferenceName, StringComparison.OrdinalIgnoreCase))
+        // Cross-preference context is deliberately limited to one secondary preference
+        // per search pass. This lets us discover stories that connect preferences such as
+        // "Argentina + NVIDIA" without letting a high-weight preference replace the
+        // primary preference represented by the current Just For You card.
+        var relatedPreferences = explicitPreferenceNames
+            .Where(name => !string.Equals(name, preferenceName, StringComparison.OrdinalIgnoreCase))
+            .Select(name =>
+            {
+                var weight = interestTerms
+                    .Where(x => string.Equals(x.Keyword, name, StringComparison.OrdinalIgnoreCase))
+                    .Select(x => x.Weight)
+                    .DefaultIfEmpty(1)
+                    .Max();
+                return (Name: name, Weight: weight);
+            })
             .OrderByDescending(x => x.Weight)
-            .Take(3)
-            .Select(x => x.Keyword)
+            .ThenBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        for (var attempt = 1; attempt <= 2; attempt++)
+        var relatedKeywords = interestTerms
+            .Where(x =>
+                !string.Equals(x.Keyword, preferenceName, StringComparison.OrdinalIgnoreCase) &&
+                !explicitPreferenceNames.Contains(x.Keyword, StringComparer.OrdinalIgnoreCase))
+            .OrderByDescending(x => x.Weight)
+            .Take(3)
+            .ToList();
+
+        // Pass 1..N: anchor every query on the current preference and optionally relate
+        // it to exactly one other preference. Then try one learned keyword relation,
+        // followed by an anchor-only search. This keeps cross-interest context useful
+        // without ever allowing it to replace the current preference.
+        var relationPasses = Math.Min(relatedPreferences.Count, 2);
+        var maxAttempts = relationPasses + (relatedKeywords.Count > 0 ? 2 : 1);
+
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
             var searchQuery = $"{preferenceName} latest current news";
+            string? relatedTerm = null;
 
-            // First pass: use learned interests to improve relevance, but keep the
-            // explicit preference as the primary subject of the search.
-            // Second pass: remove the cross-interest terms and search the preference
-            // alone so the fallback cannot accidentally become another interest's news.
-            if (attempt == 1 && relatedTerms.Count > 0)
-                searchQuery += " " + string.Join(" ", relatedTerms.Take(2));
+            var relatedPreferenceIndex = attempt - 1;
+            if (relatedPreferenceIndex < relationPasses)
+            {
+                relatedTerm = relatedPreferences[relatedPreferenceIndex].Name;
+            }
+            else if (attempt == relationPasses + 1 && relatedKeywords.Count > 0)
+            {
+                relatedTerm = relatedKeywords[0].Keyword;
+            }
+
+            if (!string.IsNullOrWhiteSpace(relatedTerm))
+                searchQuery += $" {relatedTerm}";
 
             if (attempt > 1)
                 searchQuery += " different story";
@@ -1215,10 +1258,14 @@ public class RecommendationEngine
             var selected = SelectBestPreferenceCandidate(
                 candidates,
                 preferenceName,
+                relatedTerm,
                 interestTerms);
 
+            // Never let a secondary preference select a story for the current card.
+            // If the search engine did not return a result anchored to the current
+            // preference, continue to the next query pass instead of crossing topics.
             if (string.IsNullOrWhiteSpace(selected.Url))
-                selected = candidates[Random.Shared.Next(candidates.Count)];
+                continue;
 
             try
             {
@@ -1262,6 +1309,7 @@ public class RecommendationEngine
     private static (string Title, string Url, string Snippet) SelectBestPreferenceCandidate(
         IReadOnlyList<(string Title, string Url, string Snippet)> candidates,
         string preferenceName,
+        string? relatedTerm,
         IReadOnlyList<(string Keyword, int Weight)> interestTerms)
     {
         if (candidates.Count == 0)
@@ -1269,36 +1317,47 @@ public class RecommendationEngine
 
         var preference = preferenceName.Trim();
 
-        var relatedTerms = interestTerms
-            .Where(x => !string.Equals(x.Keyword, preference, StringComparison.OrdinalIgnoreCase))
-            .OrderByDescending(x => x.Weight)
-            .Take(6)
+        // The current card preference is an absolute anchor. A secondary preference or
+        // learned keyword can improve the choice only after the candidate already matches
+        // the anchor. Therefore NVIDIA (24) can help choose an Argentina story that also
+        // mentions NVIDIA, but NVIDIA can never turn a non-Argentina story into the
+        // Argentina card simply because its weight is higher.
+        var anchored = candidates
+            .Where(candidate => MatchesPreferenceAnchor(candidate, preference))
             .ToList();
 
-        var scored = candidates
+        if (anchored.Count == 0)
+            return default;
+
+        var related = interestTerms
+            .FirstOrDefault(x =>
+                !string.IsNullOrWhiteSpace(relatedTerm) &&
+                string.Equals(x.Keyword, relatedTerm, StringComparison.OrdinalIgnoreCase));
+
+        var relatedWeight = related == default
+            ? 1
+            : Math.Clamp(related.Weight, 1, 5);
+
+        var scored = anchored
             .Select(candidate =>
             {
-                var score = 0;
+                var score = 100;
 
-                if (!string.IsNullOrWhiteSpace(preference))
-                {
-                    if (candidate.Title.Contains(preference, StringComparison.OrdinalIgnoreCase))
-                        score += 12;
-                    if (candidate.Snippet.Contains(preference, StringComparison.OrdinalIgnoreCase))
-                        score += 4;
-                }
+                if (candidate.Title.Contains(preference, StringComparison.OrdinalIgnoreCase))
+                    score += 12;
+                if (candidate.Snippet.Contains(preference, StringComparison.OrdinalIgnoreCase))
+                    score += 4;
 
-                foreach (var term in relatedTerms)
+                if (!string.IsNullOrWhiteSpace(relatedTerm))
                 {
-                    if (candidate.Title.Contains(term.Keyword, StringComparison.OrdinalIgnoreCase))
-                        score += 3 * Math.Max(1, term.Weight);
-                    else if (candidate.Snippet.Contains(term.Keyword, StringComparison.OrdinalIgnoreCase))
-                        score += Math.Max(1, term.Weight);
+                    if (candidate.Title.Contains(relatedTerm, StringComparison.OrdinalIgnoreCase))
+                        score += 6 + relatedWeight;
+                    else if (candidate.Snippet.Contains(relatedTerm, StringComparison.OrdinalIgnoreCase))
+                        score += 3 + Math.Min(3, relatedWeight);
                 }
 
                 return (candidate, score);
             })
-            .Where(x => x.score > 0)
             .OrderByDescending(x => x.score)
             .ThenBy(_ => Random.Shared.Next())
             .ToList();
@@ -1306,6 +1365,29 @@ public class RecommendationEngine
         return scored.Count > 0
             ? scored[0].candidate
             : default;
+    }
+
+    private static bool MatchesPreferenceAnchor(
+        (string Title, string Url, string Snippet) candidate,
+        string preferenceName)
+    {
+        if (string.IsNullOrWhiteSpace(preferenceName))
+            return false;
+
+        var searchableText = $"{candidate.Title} {candidate.Snippet}";
+
+        if (searchableText.Contains(preferenceName, StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        var tokens = Regex.Matches(
+                preferenceName.ToLowerInvariant(),
+                @"[\p{L}\p{N}]{3,}")
+            .Select(m => m.Value)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        return tokens.Count > 1 &&
+               tokens.All(token => searchableText.Contains(token, StringComparison.OrdinalIgnoreCase));
     }
 
     private async Task<List<(string Keyword, int Weight)>> GetUserInterestTermsAsync(
