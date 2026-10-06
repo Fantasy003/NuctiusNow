@@ -188,6 +188,11 @@
                 return;
             }
 
+            if (!result.userId.HasValue)
+            {
+                errorMessage = "Registration did not return a user ID.";
+                return;
+            }
             createdUserId = result.userId;
 
             try
@@ -198,8 +203,6 @@
             {
                 errorMessage = "Your account was created, but the activation email could not be sent. Configure SMTP and use the resend option on the verification page.";
                 Console.WriteLine($"Activation email error: {emailEx.Message}");
-                await JS.InvokeVoidAsync("resetRecaptchaCheckbox");
-                return;
             }
 
             showPreferences = true;

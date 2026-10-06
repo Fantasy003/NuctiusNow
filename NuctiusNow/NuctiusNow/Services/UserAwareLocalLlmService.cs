@@ -6,6 +6,8 @@ namespace NuctiusNow.Services;
 
 public sealed class UserAwareLocalLlmService : LocalLlmService, ILocalLlmService
 {
+    public int? SearchUserId { get; set; }
+    private int? CurrentUserId => SearchUserId ?? _session.UserId;
     private readonly UserSessionService _session;
     private readonly IDbContextFactory<ApplicationDbContext> _dbFactory;
 
@@ -28,8 +30,9 @@ public sealed class UserAwareLocalLlmService : LocalLlmService, ILocalLlmService
         int startingPage)
     {
         var filteredQuery = query;
+        var blockedDomains = new List<string>();
 
-        if (_session.UserId.HasValue)
+        if (CurrentUserId.HasValue)
         {
             try
             {
@@ -37,7 +40,7 @@ public sealed class UserAwareLocalLlmService : LocalLlmService, ILocalLlmService
 
                 var blocked = await db.UserBlockedSources
                     .AsNoTracking()
-                    .Where(x => x.IdUser == _session.UserId.Value)
+                    .Where(x => x.IdUser == CurrentUserId.Value)
                     .Select(x => x.SourceDomain)
                     .ToListAsync(cancellationToken);
 
@@ -48,6 +51,7 @@ public sealed class UserAwareLocalLlmService : LocalLlmService, ILocalLlmService
                     .Distinct(StringComparer.OrdinalIgnoreCase)
                     .ToList();
 
+                blockedDomains = domains;
                 if (domains.Count > 0)
                 {
                     filteredQuery += " " +
@@ -67,38 +71,8 @@ public sealed class UserAwareLocalLlmService : LocalLlmService, ILocalLlmService
             startingPage);
 
         return results
-            .Where(r => !IsBlocked(r.Url))
+            .Where(r => !UserBlockedSourceService.IsBlocked(r.Url, blockedDomains))
             .ToList();
-    }
-
-    private bool IsBlocked(string? url)
-    {
-        if (!_session.UserId.HasValue ||
-            string.IsNullOrWhiteSpace(url) ||
-            !Uri.TryCreate(url, UriKind.Absolute, out var uri))
-            return false;
-
-        try
-        {
-            using var db = _dbFactory.CreateDbContext();
-            var domains = db.UserBlockedSources
-                .AsNoTracking()
-                .Where(x => x.IdUser == _session.UserId.Value)
-                .Select(x => x.SourceDomain)
-                .ToList();
-
-            var host = NormalizeDomain(uri.Host);
-
-            return domains
-                .Where(x => !string.IsNullOrWhiteSpace(x))
-                .Select(NormalizeDomain)
-                .Any(d => host.Equals(d, StringComparison.OrdinalIgnoreCase) ||
-                          host.EndsWith("." + d, StringComparison.OrdinalIgnoreCase));
-        }
-        catch
-        {
-            return false;
-        }
     }
 
     private static string NormalizeDomain(string? value)

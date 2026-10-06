@@ -127,9 +127,8 @@
     private bool _explorationMode;
     private const string FeedRefreshStorageKey = "nuctiusnow_feed_refresh_count";
 
-    protected override async Task OnInitializedAsync()
+    protected override void OnInitialized()
     {
-        await sessionService.InitializeAsync();
 
         var mapping = InternetSearchService.GetCategoryMapping();
         Categories = mapping
@@ -152,6 +151,7 @@
 
         try
         {
+            await sessionService.InitializeAsync();
             _explorationMode = await RegisterFeedRefreshAsync();
             await LoadAllCategoriesAsync(Categories.Select(x => x.Name).ToList());
         }

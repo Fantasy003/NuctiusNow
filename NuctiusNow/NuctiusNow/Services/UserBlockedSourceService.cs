@@ -55,6 +55,14 @@ public sealed class UserBlockedSourceService
         return (true, "Source filters saved.");
     }
 
+    public static bool IsBlocked(string? url, IEnumerable<string> domains)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)) return false;
+        var host = NormalizeDomain(uri.Host);
+        return domains.Select(NormalizeDomain).Where(d => d.Length > 0).Any(d =>
+            host.Equals(d, StringComparison.OrdinalIgnoreCase) || host.EndsWith("." + d, StringComparison.OrdinalIgnoreCase));
+    }
+
     private static string NormalizeDomain(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))

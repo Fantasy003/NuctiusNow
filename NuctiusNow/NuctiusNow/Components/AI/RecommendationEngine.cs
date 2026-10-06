@@ -1006,7 +1006,7 @@ public class RecommendationEngine
         var userPreferenceRows = await _context.UserPreferences
             .AsNoTracking()
             .Include(up => up.Preference)
-                .ThenInclude(p => p.Tag)
+                .ThenInclude(p => p!.Tag)
             .Where(up => up.IdUser == userId && up.Preference != null)
             .ToListAsync(cancellationToken);
 
@@ -1399,7 +1399,7 @@ public class RecommendationEngine
         var preferences = await _context.UserPreferences
             .AsNoTracking()
             .Include(up => up.Preference)
-                .ThenInclude(p => p.Tag)
+                .ThenInclude(p => p!.Tag)
             .Where(up => up.IdUser == userId && up.Preference != null)
             .ToListAsync(cancellationToken);
 
@@ -1611,7 +1611,7 @@ public class RecommendationEngine
         var preferenceRows = await _context.UserPreferences
             .AsNoTracking()
             .Include(up => up.Preference)
-                .ThenInclude(p => p.Tag)
+                .ThenInclude(p => p!.Tag)
             .Where(up => up.IdUser == userId)
             .ToListAsync(cancellationToken);
 
@@ -1651,9 +1651,9 @@ public class RecommendationEngine
         var recentInteractions = await _context.UserNews
             .AsNoTracking()
             .Include(un => un.News)
-                .ThenInclude(n => n.Tag)
+                .ThenInclude(n => n!.Tag)
             .Include(un => un.News)
-                .ThenInclude(n => n.DetailNews)
+                .ThenInclude(n => n!.DetailNews)
             .Where(un => un.IdUser == userId && un.Seen)
             .OrderByDescending(un => un.DateSeen)
             .Take(20)
@@ -1662,7 +1662,7 @@ public class RecommendationEngine
         var recentComments = await _context.NewsComments
             .AsNoTracking()
             .Include(comment => comment.News)
-                .ThenInclude(n => n.Tag)
+                .ThenInclude(n => n!.Tag)
             .Where(comment => comment.IdUser == userId)
             .OrderByDescending(comment => comment.CreatedAt)
             .Take(8)
@@ -1954,7 +1954,7 @@ public class RecommendationEngine
     {
         var userPreferencesList = await _context.UserPreferences
             .Include(up => up.Preference)
-                .ThenInclude(p => p.Tag)
+                .ThenInclude(p => p!.Tag)
             .Where(up => up.IdUser == userId)
             .ToListAsync();
 

@@ -458,7 +458,7 @@
             {
                 article.ImageUrl = await LocalLlmService.SearchImageUrlAsync(
                     $"{article.Title} {article.Category}",
-                    cancellationToken);
+                    cancellationToken) ?? string.Empty;
             }
             catch (OperationCanceledException)
             {

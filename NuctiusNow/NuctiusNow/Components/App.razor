@@ -24,81 +24,9 @@
     <script src="js/tts.js"></script>
     <script src="js/nuctiusTts.js"></script>
 
-    <!-- Agregamos async y defer para no bloquear el renderizado -->
-    <script src="https://www.google.com/recaptcha/api.js?onload=onRecaptchaLoaded&render=explicit" async defer></script>
+    <script src="js/recaptcha.js"></script>
+    <script src="https://www.google.com/recaptcha/api.js?onload=onRecaptchaLoaded&amp;render=explicit" async defer></script>
 
-    <script>
-        window.recaptchaReady = false;
-
-        window.onRecaptchaLoaded = function () {
-            window.recaptchaReady = true;
-        };
-
-        window.renderRecaptchaCheckbox = function (containerId, siteKey) {
-            return new Promise((resolve) => {
-                const tryRender = () => {
-                    try {
-                        if (!window.grecaptcha || !window.grecaptcha.render) {
-                            setTimeout(tryRender, 250);
-                            return;
-                        }
-
-                        const container = document.getElementById(containerId);
-                        if (!container) {
-                            resolve("");
-                            return;
-                        }
-
-                        if (window.__registerRecaptchaWidgetId !== undefined) {
-                            const existingToken = window.grecaptcha.getResponse(window.__registerRecaptchaWidgetId);
-                            resolve(existingToken || "");
-                            return;
-                        }
-
-                        window.__registerRecaptchaWidgetId = window.grecaptcha.render(container, {
-                            sitekey: siteKey,
-                            callback: function (token) {
-                                resolve(token || "");
-                            },
-                            "expired-callback": function () {
-                                resolve("");
-                            },
-                            "error-callback": function () {
-                                resolve("");
-                            }
-                        });
-                    } catch (error) {
-                        // CAPTURA EL BLOQUEO DEL NAVEGADOR SIN ROMPER BLAZOR
-                        console.warn("reCAPTCHA fue bloqueado por la privacidad del navegador:", error);
-                        resolve(""); 
-                    }
-                };
-
-                tryRender();
-            });
-        };
-
-        window.getRecaptchaToken = function () {
-            try {
-                if (!window.grecaptcha || window.__registerRecaptchaWidgetId === undefined) {
-                    return "";
-                }
-                return window.grecaptcha.getResponse(window.__registerRecaptchaWidgetId);
-            } catch (e) {
-                return "";
-            }
-        };
-
-        window.resetRecaptchaCheckbox = function () {
-            try {
-                if (window.grecaptcha && window.__registerRecaptchaWidgetId !== undefined) {
-                    window.grecaptcha.reset(window.__registerRecaptchaWidgetId);
-                }
-            } catch (e) {
-                console.warn("No se pudo reiniciar reCAPTCHA:", e);
-            }
-        };
-    </script>
 </body>
 
 </html>

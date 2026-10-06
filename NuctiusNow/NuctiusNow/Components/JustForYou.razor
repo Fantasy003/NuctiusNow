@@ -189,22 +189,18 @@
     private bool _explorationMode;
     private const string FeedRefreshStorageKey = "nuctiusnow_feed_refresh_count";
 
-    protected override async Task OnInitializedAsync()
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (!firstRender) return;
         await sessionService.InitializeAsync();
-
         if (sessionService.IsAuthenticated && sessionService.UserId.HasValue)
         {
             _preferences.Clear();
             _preferences.AddRange(await RecommendationEngine.GetUserPreferencesAsync(sessionService.UserId.Value));
         }
-
         _isInitialized = true;
-    }
-
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (firstRender && sessionService.IsAuthenticated && _preferences.Count > 0)
+        await InvokeAsync(StateHasChanged);
+        if (sessionService.IsAuthenticated && _preferences.Count > 0)
             await RefreshRecommendationsAsync();
     }
 

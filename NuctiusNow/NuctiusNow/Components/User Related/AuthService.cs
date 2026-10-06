@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
-using BCrypt.Net;
+using System.ComponentModel.DataAnnotations;
+using System.Text;
 using Microsoft.Extensions.Configuration;
 using System.Net.Http;
 using System.Net.Http.Json;
@@ -35,6 +36,12 @@ public class AuthService
     {
         await using var context = await _dbFactory.CreateDbContextAsync();
 
+        usuarioNuevo.Username = usuarioNuevo.Username.Trim();
+        usuarioNuevo.Email = usuarioNuevo.Email.Trim();
+        if (usuarioNuevo.Username.Length < 3 || usuarioNuevo.Username.Contains('@') ||
+            !new EmailAddressAttribute().IsValid(usuarioNuevo.Email) || !ValidPassword(passwordPlana))
+            return (false, "Enter a username, a valid email and a password of 8 to 72 UTF-8 bytes.");
+
         // 1. Validation Checks: Check for unique email or username existence
         if (await context.Users.AnyAsync(u => u.Email == usuarioNuevo.Email))
             return (false, "El email ya está registrado.");
@@ -45,6 +52,9 @@ public class AuthService
         // 2. Hash password and set initial state
         usuarioNuevo.Password = BCrypt.Net.BCrypt.HashPassword(passwordPlana);
         usuarioNuevo.IsBanned = false;
+        usuarioNuevo.EmailVerified = false;
+        usuarioNuevo.IsPremium = false;
+        usuarioNuevo.PasswordHash = usuarioNuevo.Password;
 
         try
         {
@@ -55,7 +65,7 @@ public class AuthService
         catch (Exception ex)
         {
             Console.WriteLine($"DB Error during registration: {ex.Message}");
-            return (false, $"Error desconocido al registrar el usuario: {ex.Message}");
+            return (false, "No se pudo registrar el usuario.");
         }
     }
 
@@ -128,17 +138,7 @@ public class AuthService
         if (!success)
             return (false, message, null);
 
-        await using var context = await _dbFactory.CreateDbContextAsync();
-
-        // After RegistrarAsync we expect the user to be saved and have an Id
-        var savedUser = await context.Users.FirstOrDefaultAsync(
-            u => u.Email == usuarioNuevo.Email ||
-                 u.Username == usuarioNuevo.Username);
-
-        if (savedUser == null)
-            return (false, "Failed to retrieve created user.", null);
-
-        return (true, "Usuario registrado con éxito.", savedUser.IdUser);
+        return (true, "Usuario registrado con éxito.", usuarioNuevo.IdUser);
     }
 
     /// <summary>
@@ -162,7 +162,7 @@ public class AuthService
         {
             // Find or create tag
             var tag = await context.Tags
-                .FirstOrDefaultAsync(t => t.Name == prefName);
+                .FirstOrDefaultAsync(t => t.Name.ToLower() == prefName.ToLower());
 
             if (tag == null)
             {
@@ -221,6 +221,9 @@ public class AuthService
     {
         await using var context = await _dbFactory.CreateDbContextAsync();
 
+        if (string.IsNullOrWhiteSpace(usernameOrEmail) || string.IsNullOrEmpty(passwordPlana) || Encoding.UTF8.GetByteCount(passwordPlana) > 72)
+            return (null, "Usuario o contraseña incorrectos.");
+        usernameOrEmail = usernameOrEmail.Trim();
         // Attempt to find user by username OR email
         var user = await context.Users.FirstOrDefaultAsync(
             u => u.Username == usernameOrEmail ||
@@ -235,15 +238,19 @@ public class AuthService
 
         // Check if banned status is active
         if (user.IsBanned)
-            return (user, "Cuenta suspendida temporalmente.");
+            return (null, "Cuenta suspendida temporalmente.");
 
-        // Verify password
-        if (!BCrypt.Net.BCrypt.Verify(passwordPlana, user.Password))
+        try
         {
-            return (
-                (NuctiusNow.Components.User_Related.User?)null,
-                "Usuario o contraseña incorrectos.");
+            if (!BCrypt.Net.BCrypt.Verify(passwordPlana, user.Password))
+                return (null, "Usuario o contraseña incorrectos.");
         }
+        catch (Exception ex) when (ex is BCrypt.Net.SaltParseException or ArgumentException)
+        {
+            return (null, "Usuario o contraseña incorrectos.");
+        }
+        if (!user.EmailVerified)
+            return (null, "Verify your email before logging in.");
 
         // Success: Return the found user object
         return (user, "Login exitoso.");
@@ -302,7 +309,7 @@ public class AuthService
             .Select(p => p!))
         {
             var tag = await context.Tags
-                .FirstOrDefaultAsync(t => t.Name == prefName);
+                .FirstOrDefaultAsync(t => t.Name.ToLower() == prefName.ToLower());
 
             if (tag == null)
             {
@@ -409,6 +416,16 @@ public class AuthService
         }
     }
 
+    private static string? NormalizeLanguage(string? language) => language?.Trim().ToLowerInvariant() switch
+    {
+        "en" or "english" or "1" => "en",
+        "es" or "spanish" or "2" => "es",
+        _ => null
+    };
+
+    private static bool ValidPassword(string password) =>
+        !string.IsNullOrWhiteSpace(password) && password.Length >= 8 && Encoding.UTF8.GetByteCount(password) <= 72;
+
     public sealed record ProfileUpdateStatus(
         bool CanUpdate,
         DateTime? NextAvailableAt,
@@ -417,7 +434,8 @@ public class AuthService
     public sealed record ProfileUpdateResult(
         bool Success,
         string Message,
-        DateTime? NextAvailableAt = null);
+        DateTime? NextAvailableAt = null,
+        bool RequiresEmailVerification = false);
 
     /// <summary>
     /// Returns whether the user may update their profile. The cooldown is persisted
@@ -463,10 +481,12 @@ public class AuthService
     {
         await using var context = await _dbFactory.CreateDbContextAsync();
 
+        await using var transaction = await context.Database.BeginTransactionAsync();
         var user = await context.Users
-            .FirstOrDefaultAsync(u => u.IdUser == userId);
+            .FromSqlInterpolated($"SELECT * FROM users WHERE id_user = {userId} FOR UPDATE")
+            .SingleOrDefaultAsync();
 
-        if (user == null)
+        if (user == null || user.IsBanned || !user.EmailVerified)
             return new ProfileUpdateResult(false, "User not found.");
 
         var now = DateTime.UtcNow;
@@ -489,12 +509,12 @@ public class AuthService
         username = username?.Trim() ?? string.Empty;
         email = email?.Trim() ?? string.Empty;
 
-        if (string.IsNullOrWhiteSpace(username) || username.Length < 3)
+        if (string.IsNullOrWhiteSpace(username) || username.Length < 3 || username.Contains('@'))
             return new ProfileUpdateResult(
                 false,
                 "Username must contain at least 3 characters.");
 
-        if (string.IsNullOrWhiteSpace(email) || !email.Contains('@'))
+        if (string.IsNullOrWhiteSpace(email) || !new EmailAddressAttribute().IsValid(email))
             return new ProfileUpdateResult(
                 false,
                 "Enter a valid email address.");
@@ -515,14 +535,25 @@ public class AuthService
                 "The email is already in use.");
         }
 
-        var normalizedLanguage =
-            language.Equals("Spanish", StringComparison.OrdinalIgnoreCase) ||
-            language.Equals("es", StringComparison.OrdinalIgnoreCase)
-                ? "es"
-                : "en";
+        var normalizedLanguage = NormalizeLanguage(language);
+        if (normalizedLanguage == null)
+            return new ProfileUpdateResult(false, "Select a supported language.");
+        if (birthday.Date > DateTime.Today)
+            return new ProfileUpdateResult(false, "Birthday cannot be in the future.");
+        if (newPassword != null && !ValidPassword(newPassword))
+            return new ProfileUpdateResult(false, "Password must contain 8 to 72 UTF-8 bytes.");
+        // Email changes require a fresh verification. Keep this profile action from
+        // silently granting access to a different, unverified email address.
+        var emailChanged = !string.Equals(user.Email, email, StringComparison.OrdinalIgnoreCase);
 
         user.Username = username;
         user.Email = email;
+        if (emailChanged)
+        {
+            user.EmailVerified = false;
+            user.EmailVerificationTokenHash = null;
+            user.EmailVerificationExpiresAt = null;
+        }
         user.Birthday = birthday.Date;
         user.Language = normalizedLanguage;
 
@@ -544,7 +575,7 @@ public class AuthService
         // Replacing the links must not erase recommendation history.
         var existingLinks = await context.UserPreferences
             .Include(up => up.Preference)
-                .ThenInclude(p => p.Tag)
+                .ThenInclude(p => p!.Tag)
             .Where(up => up.IdUser == userId)
             .ToListAsync();
 
@@ -565,7 +596,7 @@ public class AuthService
         foreach (var prefName in cleanPreferences)
         {
             var tag = await context.Tags
-                .FirstOrDefaultAsync(t => t.Name == prefName);
+                .FirstOrDefaultAsync(t => t.Name.ToLower() == prefName.ToLower());
 
             if (tag == null)
             {
@@ -593,7 +624,7 @@ public class AuthService
                 prefName,
                 out var previousWeight);
 
-            if (previousWeight == 0)
+            if (!previousWeights.ContainsKey(prefName))
                 previousWeight = 1;
 
             context.UserPreferences.Add(new UserPreference
@@ -610,10 +641,11 @@ public class AuthService
         try
         {
             await context.SaveChangesAsync();
+            await transaction.CommitAsync();
 
             return new ProfileUpdateResult(
                 true,
-                "Profile updated successfully.");
+                "Profile updated successfully.", RequiresEmailVerification: emailChanged);
         }
         catch (Exception ex)
         {

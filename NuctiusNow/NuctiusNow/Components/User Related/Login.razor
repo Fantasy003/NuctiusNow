@@ -77,7 +77,7 @@
             return;
         }
 
-        await sessionService.SetUserAsync(user.IdUser, user.Username);
+        await sessionService.SetUserAsync(user.IdUser, loginModel.RememberMe);
         Navigation.NavigateTo("/");
     }
 

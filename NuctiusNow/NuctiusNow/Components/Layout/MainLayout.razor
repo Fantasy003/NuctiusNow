@@ -17,6 +17,8 @@
 </div>
 
 @code {
+    private string? appliedDocumentTheme;
+
     private bool ThemeEnabled =>
         !IsExcludedThemeRoute(Navigation.Uri);
 
@@ -37,8 +39,9 @@
             if (!string.IsNullOrWhiteSpace(savedTheme))
                 ThemeState.SetTheme(savedTheme);
 
-            await ApplyDocumentThemeAsync();
         }
+        var theme = ThemeEnabled ? ThemeState.CurrentTheme : "dark";
+        if (theme != appliedDocumentTheme) await ApplyDocumentThemeAsync();
     }
 
     private async void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
@@ -51,6 +54,7 @@
     {
         var theme = ThemeEnabled ? ThemeState.CurrentTheme : "dark";
         await JSRuntime.InvokeVoidAsync("nuctiusTheme.set", theme);
+        appliedDocumentTheme = theme;
     }
 
     private static bool IsExcludedThemeRoute(string uri)

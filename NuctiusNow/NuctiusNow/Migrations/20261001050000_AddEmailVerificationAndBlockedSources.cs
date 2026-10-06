@@ -1,3 +1,5 @@
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using NuctiusNow.Data;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -5,6 +7,8 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
 namespace NuctiusNow.Migrations;
 
+[DbContext(typeof(ApplicationDbContext))]
+[Migration("20261001050000_AddEmailVerificationAndBlockedSources")]
 public partial class AddEmailVerificationAndBlockedSources : Migration
 {
     protected override void Up(MigrationBuilder migrationBuilder)

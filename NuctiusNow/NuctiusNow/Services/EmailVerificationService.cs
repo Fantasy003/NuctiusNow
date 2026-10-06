@@ -39,6 +39,13 @@ public sealed class EmailVerificationService
         if (user == null || string.IsNullOrWhiteSpace(user.Email))
             throw new InvalidOperationException("The user or email address could not be found.");
 
+        if (user.EmailVerified) return;
+        var baseUrl = (_configuration["Application:PublicBaseUrl"] ?? string.Empty).TrimEnd('/');
+        if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out var publicUri) ||
+            (publicUri.Scheme != Uri.UriSchemeHttp && publicUri.Scheme != Uri.UriSchemeHttps))
+            throw new InvalidOperationException("Application:PublicBaseUrl is not configured with an HTTP(S) URL.");
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+
         var bytes = RandomNumberGenerator.GetBytes(32);
         var token = Convert.ToBase64String(bytes)
             .Replace("+", "-", StringComparison.Ordinal)
@@ -53,11 +60,7 @@ public sealed class EmailVerificationService
         user.EmailVerificationExpiresAt = DateTime.UtcNow.AddHours(24);
         await db.SaveChangesAsync(cancellationToken);
 
-        var baseUrl = (_configuration["Application:PublicBaseUrl"] ?? string.Empty).TrimEnd('/');
-        if (string.IsNullOrWhiteSpace(baseUrl))
-            throw new InvalidOperationException("Application:PublicBaseUrl is not configured.");
-
-        var activationUrl = $"{baseUrl}/activate-account/{Uri.EscapeDataString(token)}";
+        var activationUrl = WebUtility.HtmlEncode($"{baseUrl}/activate-account/{Uri.EscapeDataString(token)}");
         var username = WebUtility.HtmlEncode(user.Username);
 
         var html = $"""
@@ -82,6 +85,7 @@ public sealed class EmailVerificationService
             "Activate your NuctiusNow account",
             html,
             cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
     }
 
     public async Task<(bool Success, string Message)> ActivateAsync(
@@ -109,10 +113,13 @@ public sealed class EmailVerificationService
             return (false, "The activation link has expired. Request a new activation email.");
         }
 
-        user.EmailVerified = true;
-        user.EmailVerificationTokenHash = null;
-        user.EmailVerificationExpiresAt = null;
-        await db.SaveChangesAsync(cancellationToken);
+        // Consume the token atomically so concurrent requests cannot both activate it.
+        var changed = await db.Users.Where(u => u.IdUser == user.IdUser &&
+                u.EmailVerificationTokenHash == hash && !u.EmailVerified && u.EmailVerificationExpiresAt > DateTime.UtcNow)
+            .ExecuteUpdateAsync(setters => setters.SetProperty(u => u.EmailVerified, true)
+                .SetProperty(u => u.EmailVerificationTokenHash, (string?)null)
+                .SetProperty(u => u.EmailVerificationExpiresAt, (DateTime?)null), cancellationToken);
+        if (changed != 1) return (false, "The activation link is invalid or has already been used.");
 
         return (true, "Your email has been verified. You can now log in.");
     }

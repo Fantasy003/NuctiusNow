@@ -1,61 +1,103 @@
+using System.Security.Cryptography;
+using System.Text.Json;
+using Microsoft.AspNetCore.DataProtection;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.JSInterop;
+using NuctiusNow.Data;
 
 namespace NuctiusNow.Components.User_Related;
 
 public class UserSessionService
 {
+    private const string SessionKey = "nuctiusnow_session";
     private readonly IJSRuntime _jsRuntime;
-    private bool _initialized;
+    private readonly IDbContextFactory<ApplicationDbContext> _dbFactory;
+    private readonly ITimeLimitedDataProtector _protector;
 
     public bool IsAuthenticated { get; private set; }
     public int? UserId { get; private set; }
     public string? Username { get; private set; }
+    public bool IsPremium { get; private set; }
+    public bool RememberMe { get; private set; }
 
-    public UserSessionService(IJSRuntime jsRuntime)
+    public UserSessionService(IJSRuntime jsRuntime, IDbContextFactory<ApplicationDbContext> dbFactory, IDataProtectionProvider protection)
     {
         _jsRuntime = jsRuntime;
+        _dbFactory = dbFactory;
+        _protector = protection.CreateProtector("NuctiusNow.UserSession.v1").ToTimeLimitedDataProtector();
     }
 
     public async Task InitializeAsync()
     {
-        if (_initialized)
-            return;
+        var ticket = await _jsRuntime.InvokeAsync<string?>("sessionStorage.getItem", SessionKey);
+        RememberMe = string.IsNullOrEmpty(ticket);
+        if (RememberMe)
+            ticket = await _jsRuntime.InvokeAsync<string?>("localStorage.getItem", SessionKey);
 
-        var storedUser = await _jsRuntime.InvokeAsync<string>("localStorage.getItem", "nuctiusnow_user");
-        var storedUserId = await _jsRuntime.InvokeAsync<string>("localStorage.getItem", "nuctiusnow_userid");
-
-        if (!string.IsNullOrWhiteSpace(storedUser) && int.TryParse(storedUserId, out var parsedId))
+        ResetState();
+        if (string.IsNullOrEmpty(ticket)) return;
+        try
         {
-            Username = storedUser;
-            UserId = parsedId;
-            IsAuthenticated = true;
+            await using var context = await _dbFactory.CreateDbContextAsync();
+            var identity = JsonSerializer.Deserialize<SessionIdentity>(_protector.Unprotect(ticket, out _));
+            var user = identity == null ? null : await context.Users.AsNoTracking()
+                .SingleOrDefaultAsync(u => u.IdUser == identity.UserId);
+            // Password changes and bans invalidate existing tickets.
+            if (user == null || user.IsBanned || !user.EmailVerified || user.Password != identity!.PasswordStamp)
+            {
+                await ClearAsync();
+                return;
+            }
+            SetState(user);
         }
-        else
+        catch (Exception ex) when (ex is CryptographicException or JsonException or FormatException)
         {
-            Username = null;
-            UserId = null;
-            IsAuthenticated = false;
+            await ClearAsync();
         }
-
-        _initialized = true;
     }
 
-    public async Task SetUserAsync(int userId, string username)
+    // Called only by server-side components after successful login/registration.
+    public async Task SetUserAsync(int userId, bool rememberMe = false)
     {
-        UserId = userId;
-        Username = username;
-        IsAuthenticated = true;
-
-        await _jsRuntime.InvokeVoidAsync("localStorage.setItem", "nuctiusnow_user", username);
-        await _jsRuntime.InvokeVoidAsync("localStorage.setItem", "nuctiusnow_userid", userId.ToString());
+        await using var context = await _dbFactory.CreateDbContextAsync();
+        var user = await context.Users.AsNoTracking().SingleOrDefaultAsync(u => u.IdUser == userId && !u.IsBanned && u.EmailVerified);
+        if (user == null) { await ClearAsync(); return; }
+        var ticket = _protector.Protect(JsonSerializer.Serialize(new SessionIdentity(user.IdUser, user.Password)),
+            rememberMe ? TimeSpan.FromDays(30) : TimeSpan.FromHours(12));
+        await ClearAsync();
+        await _jsRuntime.InvokeVoidAsync(rememberMe ? "localStorage.setItem" : "sessionStorage.setItem", SessionKey, ticket);
+        RememberMe = rememberMe;
+        SetState(user);
     }
+
+    public Task SetUserAsync(int userId, string username) => SetUserAsync(userId, RememberMe);
 
     public async Task ClearAsync()
     {
-        Username = null;
-        UserId = null;
-        IsAuthenticated = false;
+        ResetState();
+        RememberMe = false;
+        await _jsRuntime.InvokeVoidAsync("localStorage.removeItem", SessionKey);
+        await _jsRuntime.InvokeVoidAsync("sessionStorage.removeItem", SessionKey);
+        // Retire the old, editable identity fields; never trust them for authentication.
         await _jsRuntime.InvokeVoidAsync("localStorage.removeItem", "nuctiusnow_user");
         await _jsRuntime.InvokeVoidAsync("localStorage.removeItem", "nuctiusnow_userid");
     }
+
+    private void ResetState()
+    {
+        IsAuthenticated = false;
+        UserId = null;
+        Username = null;
+        IsPremium = false;
+    }
+
+    private void SetState(User user)
+    {
+        IsAuthenticated = true;
+        UserId = user.IdUser;
+        Username = user.Username;
+        IsPremium = user.IsPremium;
+    }
+
+    private sealed record SessionIdentity(int UserId, string PasswordStamp);
 }

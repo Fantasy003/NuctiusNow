@@ -56,16 +56,16 @@ public class CategoryNewsService
                 userId,
                 minimumDate: null,
                 onlyUnseen: true,
-                cancellationToken);
+                cancellationToken, personalize: false);
 
             if (exploratory == null)
             {
                 exploratory = await GetRandomNewsAsync(
                     category,
-                    userId: null,
+                    userId: userId,
                     minimumDate: null,
                     onlyUnseen: false,
-                    cancellationToken);
+                    cancellationToken, personalize: false);
             }
 
             if (exploratory != null)
@@ -107,6 +107,8 @@ public class CategoryNewsService
         // We create a fresh scope so RecommendationEngine gets its own DbContext, preventing thread crashes.
         using var scope = _scopeFactory.CreateScope();
         var recommendationEngine = scope.ServiceProvider.GetRequiredService<RecommendationEngine>();
+        if (scope.ServiceProvider.GetService<ILocalLlmService>() is UserAwareLocalLlmService userAwareSearch)
+            userAwareSearch.SearchUserId = userId;
 
         try
         {
@@ -183,7 +185,7 @@ public class CategoryNewsService
         }
 
         // 5. Final fallback: any random article, even if already seen.
-        var randomFallback = await GetRandomNewsAsync(category, userId: null, minimumDate: null, onlyUnseen: false, cancellationToken);
+        var randomFallback = await GetRandomNewsAsync(category, userId: userId, minimumDate: null, onlyUnseen: false, cancellationToken);
         if (randomFallback != null)
             await EnsureNewsImageIfMissingAsync(randomFallback, cancellationToken);
 
@@ -239,7 +241,7 @@ public class CategoryNewsService
         int? userId,
         DateTime? minimumDate,
         bool onlyUnseen,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, bool personalize = true)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
         var normalizedCategory = category.Trim().ToLowerInvariant();
@@ -273,10 +275,17 @@ public class CategoryNewsService
             .Take(100)
             .ToListAsync(cancellationToken);
 
+        if (userId.HasValue)
+        {
+            var blocked = await db.UserBlockedSources.AsNoTracking()
+                .Where(s => s.IdUser == userId.Value).Select(s => s.SourceDomain).ToListAsync(cancellationToken);
+            candidates = candidates.Where(n => !UserBlockedSourceService.IsBlocked(n.Hyperlink, blocked)).ToList();
+        }
+
         if (candidates.Count == 0)
             return null;
 
-        if (!userId.HasValue)
+        if (!userId.HasValue || !personalize)
             return candidates[Random.Shared.Next(candidates.Count)];
 
         var termWeights = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
@@ -284,7 +293,7 @@ public class CategoryNewsService
         var preferenceRows = await db.UserPreferences
             .AsNoTracking()
             .Include(up => up.Preference)
-                .ThenInclude(p => p.Tag)
+                .ThenInclude(p => p!.Tag)
             .Where(up => up.IdUser == userId.Value && up.Preference != null && up.Weight > 0)
             .ToListAsync(cancellationToken);
 

@@ -478,7 +478,8 @@ else
 
     private async Task SaveChanges()
     {
-        if (isSaving || profileUpdateLocked || !sessionService.UserId.HasValue)
+        await sessionService.InitializeAsync();
+        if (isSaving || !userLoaded || profileUpdateLocked || !sessionService.IsAuthenticated || !sessionService.UserId.HasValue)
             return;
 
         saveMessage = string.Empty;
@@ -510,6 +511,15 @@ else
 
             if (result.Success)
             {
+                if (result.RequiresEmailVerification)
+                {
+                    var userId = sessionService.UserId.Value;
+                    await sessionService.ClearAsync();
+                    try { await EmailVerification.SendActivationEmailAsync(userId); }
+                    catch { /* The pending page supports resending after SMTP is restored. */ }
+                    Navigation.NavigateTo($"/email-verification-pending?email={Uri.EscapeDataString(userModel.Email.Trim())}");
+                    return;
+                }
                 userModel.Password = string.Empty;
                 userModel.ConfirmPassword = string.Empty;
                 await sessionService.SetUserAsync(sessionService.UserId.Value, userModel.Username);

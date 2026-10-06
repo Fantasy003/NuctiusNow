@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using NuctiusNow.Components;
 using NuctiusNow.Components.User_Related;
@@ -8,6 +9,9 @@ var builder = WebApplication.CreateBuilder(args);
 
 // 1. SERVICIOS Y ESTADOS
 builder.Services.AddScoped<ThemeState>();
+builder.Services.AddDataProtection().SetApplicationName("NuctiusNow")
+    .PersistKeysToFileSystem(new DirectoryInfo(builder.Configuration["DataProtection:KeysPath"]
+        ?? Path.Combine(AppContext.BaseDirectory, "data-protection-keys")));
 
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents()

@@ -5,6 +5,10 @@ VisualStudioVersion = 17.14.37012.4
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NuctiusNow", "NuctiusNow\NuctiusNow\NuctiusNow.csproj", "{EBAFCF5A-314C-408C-A7DA-F0633DBC474D}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{9EC0D6AF-552C-4B39-A8D3-0D6FA7F07FC1}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NuctiusNow.Tests", "tests\NuctiusNow.Tests\NuctiusNow.Tests.csproj", "{418FA6EA-6610-45FD-9EA7-6E4D1CD67023}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -15,11 +19,18 @@ Global
 		{EBAFCF5A-314C-408C-A7DA-F0633DBC474D}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{EBAFCF5A-314C-408C-A7DA-F0633DBC474D}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{EBAFCF5A-314C-408C-A7DA-F0633DBC474D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{418FA6EA-6610-45FD-9EA7-6E4D1CD67023}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{418FA6EA-6610-45FD-9EA7-6E4D1CD67023}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{418FA6EA-6610-45FD-9EA7-6E4D1CD67023}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{418FA6EA-6610-45FD-9EA7-6E4D1CD67023}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {3D5AF308-8510-47BA-A271-46BC17BD9262}
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{418FA6EA-6610-45FD-9EA7-6E4D1CD67023} = {9EC0D6AF-552C-4B39-A8D3-0D6FA7F07FC1}
 	EndGlobalSection
 EndGlobal

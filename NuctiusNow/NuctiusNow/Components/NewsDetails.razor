@@ -10,8 +10,8 @@
 @using NuctiusNow.Components.User_Related
 @inject UserSessionService sessionService
 @inject NavigationManager Navigation
-@inject ApplicationDbContext DbContext
-@inject RecommendationEngine recommendationEngine
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
+@inject IServiceScopeFactory ScopeFactory
 @inject IJSRuntime JS
 
 <PageTitle>News Details - NuctiusNow</PageTitle>
@@ -307,14 +307,14 @@ else
     private string? fullBodyError;
     private List<AdditionalSource> additionalSources = new();
 
-    protected override async Task OnInitializedAsync()
+    private int? loadedNewsId;
+    private bool trackingPending;
+
+    private async Task LoadNewsAsync()
     {
         await sessionService.InitializeAsync();
 
-        currentNews = await DbContext.News
-            .Include(n => n.Tag)
-            .Include(n => n.DetailNews)
-            .FirstOrDefaultAsync(n => n.IdNews == Id);
+        currentNews = await LoadNewsRecordAsync(Id);
 
         if (currentNews == null)
         {
@@ -331,7 +331,7 @@ else
         {
             try
             {
-                heroImageUrl = await recommendationEngine.EnsureNewsImageAsync(Id);
+                heroImageUrl = await WithEngineAsync(engine => engine.EnsureNewsImageAsync(Id));
             }
             catch (Exception ex)
             {
@@ -343,18 +343,18 @@ else
         {
             try
             {
-                var reaction = await recommendationEngine.GetUserReactionAsync(
+                var reaction = await WithEngineAsync(engine => engine.GetUserReactionAsync(
                     sessionService.UserId.Value,
-                    Id);
+                    Id));
 
                 hasLiked = reaction == 1;
                 hasDisliked = reaction == -1;
 
                 // Direct opens (for example from a bookmark or URL) still register the
                 // article as viewed; Home/Search/For You already register the stronger click signal.
-                await recommendationEngine.RegisterNewsViewAsync(
+                await WithEngineAsync(engine => engine.RegisterNewsViewAsync(
                     sessionService.UserId.Value,
-                    Id);
+                    Id));
             }
             catch (Exception ex)
             {
@@ -371,16 +371,13 @@ else
             isGeneratingArticle = true;
             try
             {
-                var generated = await recommendationEngine.EnsureAiGeneratedArticleAsync(Id);
+                var generated = await WithEngineAsync(engine => engine.EnsureAiGeneratedArticleAsync(Id));
 
                 // The recommendation engine stores both the original NuctiusNow article
                 // and the AI summary. Reload once so the cached values are what the UI renders.
                 if (!string.IsNullOrWhiteSpace(generated) || !hasCachedSummary)
                 {
-                    currentNews = await DbContext.News
-                        .Include(n => n.Tag)
-                        .Include(n => n.DetailNews)
-                        .FirstOrDefaultAsync(n => n.IdNews == Id);
+                    currentNews = await LoadNewsRecordAsync(Id);
                 }
             }
             catch (OperationCanceledException)
@@ -399,7 +396,7 @@ else
             }
         }
 
-        comments = await recommendationEngine.GetCommentsForNewsAsync(Id);
+        comments = await WithEngineAsync(engine => engine.GetCommentsForNewsAsync(Id));
         isLoading = false;
     }
 
@@ -431,10 +428,12 @@ else
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!firstRender || currentNews == null)
+        if (!trackingPending || currentNews == null || isLoading)
             return;
 
-        readingTimer.Start();
+        trackingPending = false;
+        var articleId = currentNews.IdNews;
+        readingTimer.Restart();
 
         if (sessionService.IsAuthenticated)
         {
@@ -451,10 +450,10 @@ else
                     {
                         if (sessionService.UserId.HasValue)
                         {
-                            await recommendationEngine.RegisterReadingTimeAsync(
+                            await WithEngineAsync(engine => engine.RegisterReadingTimeAsync(
                                 sessionService.UserId.Value,
-                                Id,
-                                timeSpentSeconds: 120);
+                                articleId,
+                                timeSpentSeconds: 120));
                         }
                     });
                 }
@@ -488,9 +487,9 @@ else
         {
             try
             {
-                await recommendationEngine.MarkNewsInterestAsync(
+                await WithEngineAsync(engine => engine.MarkNewsInterestAsync(
                     sessionService.UserId.Value,
-                    Id);
+                    Id));
             }
             catch (Exception ex)
             {
@@ -541,23 +540,20 @@ else
 
         try
         {
-            await recommendationEngine.RegisterInteractionAsync(
+            await WithEngineAsync(engine => engine.RegisterInteractionAsync(
                 sessionService.UserId.Value,
                 Id,
                 liked: isLike,
-                interested: isLike);
+                interested: isLike));
 
-            var reaction = await recommendationEngine.GetUserReactionAsync(
+            var reaction = await WithEngineAsync(engine => engine.GetUserReactionAsync(
                 sessionService.UserId.Value,
-                Id);
+                Id));
 
             hasLiked = reaction == 1;
             hasDisliked = reaction == -1;
 
-            currentNews = await DbContext.News
-                .Include(n => n.Tag)
-                .Include(n => n.DetailNews)
-                .FirstOrDefaultAsync(n => n.IdNews == Id);
+            currentNews = await LoadNewsRecordAsync(Id);
         }
         catch (Exception ex)
         {
@@ -585,13 +581,13 @@ else
         isSubmittingComment = true;
         try
         {
-            await recommendationEngine.AddCommentAsync(
+            await WithEngineAsync(engine => engine.AddCommentAsync(
                 sessionService.UserId.Value,
                 Id,
-                newCommentText);
+                newCommentText));
 
             newCommentText = string.Empty;
-            comments = await recommendationEngine.GetCommentsForNewsAsync(Id);
+            comments = await WithEngineAsync(engine => engine.GetCommentsForNewsAsync(Id));
         }
         catch
         {
@@ -630,10 +626,10 @@ else
             {
                 try
                 {
-                    await recommendationEngine.RegisterReadingTimeAsync(
+                    await WithEngineAsync(engine => engine.RegisterReadingTimeAsync(
                         sessionService.UserId.Value,
-                        Id,
-                        timeSpentSeconds);
+                        currentNews.IdNews,
+                        timeSpentSeconds));
                 }
                 catch
                 {
@@ -641,6 +637,33 @@ else
                 }
             }
         }
+    }
+
+    private async Task<News?> LoadNewsRecordAsync(int newsId)
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        return await db.News.AsNoTracking().Include(n => n.Tag).Include(n => n.DetailNews)
+            .SingleOrDefaultAsync(n => n.IdNews == newsId);
+    }
+
+    private IServiceScope CreateEngineScope()
+    {
+        var scope = ScopeFactory.CreateScope();
+        if (scope.ServiceProvider.GetService<ILocalLlmService>() is UserAwareLocalLlmService search)
+            search.SearchUserId = sessionService.UserId;
+        return scope;
+    }
+
+    private async Task WithEngineAsync(Func<RecommendationEngine, Task> action)
+    {
+        using var scope = CreateEngineScope();
+        await action(scope.ServiceProvider.GetRequiredService<RecommendationEngine>());
+    }
+
+    private async Task<T> WithEngineAsync<T>(Func<RecommendationEngine, Task<T>> action)
+    {
+        using var scope = CreateEngineScope();
+        return await action(scope.ServiceProvider.GetRequiredService<RecommendationEngine>());
     }
 
     private sealed class AdditionalSource
@@ -767,6 +790,21 @@ else
 
     protected override async Task OnParametersSetAsync()
     {
+        if (loadedNewsId == Id) return;
+        if (loadedNewsId.HasValue) await DisposeAsync();
+        loadedNewsId = Id;
+        dotNetRef = null;
+        readingInterestTimer = null;
+        readingTimer.Reset();
+        scrollInterestRegistered = false;
+        timerInterestRegistered = false;
+        hasLiked = false;
+        hasDisliked = false;
+        comments.Clear();
+        commentError = null;
+        reactionError = null;
+        fullBodyError = null;
+        isLoading = true;
         ttsUnlocked = false;
         ttsPlaying = false;
         ttsRate = 1.0;
@@ -779,5 +817,7 @@ else
         {
             // JS may not be available during an early lifecycle phase.
         }
+        await LoadNewsAsync();
+        trackingPending = currentNews != null;
     }
 }
