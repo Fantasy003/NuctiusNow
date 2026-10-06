@@ -20,7 +20,7 @@
         <div class="register-body">
             @if (!string.IsNullOrEmpty(errorMessage))
             {
-                <div class="error-alert">
+                <div class="error-alert" role="alert">
                     <span class="error-icon">⚠️</span>
                     <span class="error-text">@errorMessage</span>
                 </div>
@@ -85,23 +85,36 @@
                     <div class="activation-notice">
                         <span class="activation-notice-icon">✉</span>
                         <div>
-                            <strong>Check your email before accessing NuctiusNow</strong>
-                            <p>We sent an activation link to <b>@registerModel.Email</b>. Activate your account first. Your preferences can be saved now and will be ready when you sign in.</p>
+                            <strong>@(activationEmailSent ? "Check your email" : "Your account is ready for verification")</strong>
+                            @if (activationEmailSent)
+                            {
+                                <p>We sent an activation link to <b>@registerModel.Email</b>. Activate your account before signing in.</p>
+                            }
+                            else
+                            {
+                                <p>We couldn't send the activation link to <b>@registerModel.Email</b>. Continue to the verification page to request another email.</p>
+                            }
+                            <p>You can save your preferences now; they'll be ready when you sign in.</p>
                         </div>
                     </div>
 
-                    <h3>Select your preferences</h3>
-                    <p>Add topics you're interested in so we can personalize your feed.</p>
+                    <h3 id="preferences-heading">Select your preferences</h3>
+                    <p class="preferences-description">Add topics you're interested in so we can personalize your feed.</p>
 
-                    <div class="pref-input-row">
-                        <input type="text" @bind="newPrefInput" placeholder="e.g. Technology" />
-                        <button class="btn-add" @onclick="AddPreference">Add</button>
-                    </div>
+                    <form class="pref-input-row" @onsubmit="AddPreference" @onsubmit:preventDefault>
+                        <label class="pref-input-label" for="preference-topic">Topic of interest</label>
+                        <input id="preference-topic" type="text" @bind="newPrefInput" @bind:event="oninput" placeholder="e.g. Technology" />
+                        <button type="submit" class="btn-add" disabled="@string.IsNullOrWhiteSpace(newPrefInput)">Add</button>
+                    </form>
 
-                    <div class="pref-list">
+                    <div class="pref-list" aria-live="polite">
+                        @if (preferences.Count == 0)
+                        {
+                            <p class="pref-empty">No topics yet. Add a few favorites, or continue and explore.</p>
+                        }
                         @foreach (var p in preferences)
                         {
-                            <span class="pref-chip">@p <button class="chip-remove" @onclick="() => RemovePreference(p)">✕</button></span>
+                            <span class="pref-chip" @key="p"><span>@p</span><button type="button" class="chip-remove" aria-label="@($"Remove {p}")" @onclick="() => RemovePreference(p)">✕</button></span>
                         }
                     </div>
 
@@ -123,6 +136,7 @@
 
     // Registration -> Preferences flow state
     private bool showPreferences = false;
+    private bool activationEmailSent;
     private int? createdUserId = null;
     private List<string> preferences = new();
     private string newPrefInput = string.Empty;
@@ -198,10 +212,11 @@
             try
             {
                 await EmailVerification.SendActivationEmailAsync(createdUserId.Value);
+                activationEmailSent = true;
             }
             catch (Exception emailEx)
             {
-                errorMessage = "Your account was created, but the activation email could not be sent. Configure SMTP and use the resend option on the verification page.";
+                errorMessage = "Your account was created, but we couldn't send the activation email. You can save your preferences and request another email on the next page.";
                 Console.WriteLine($"Activation email error: {emailEx.Message}");
             }
 

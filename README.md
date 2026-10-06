@@ -33,6 +33,27 @@ Use environment settings or user secrets for credential values. Protected sessio
 
 Profile updates normalize supported English/Spanish language values to `en`/`es`. A successful update starts the existing three-hour cooldown. Changing email requires verification of the new address; if SMTP is unavailable, the verification page supports resending once delivery is configured.
 
+## Activation email setup
+
+Email delivery is disabled unless `Smtp__Enabled=true` is configured. If registration reports that delivery failed, the account still exists: finish preferences and use **Resend** after correcting the mail configuration. Do not register the same account again.
+
+For a local VSCode PowerShell terminal, set the following before starting the application (replace placeholders with your provider's settings; keep credentials out of Git):
+
+```powershell
+$env:ASPNETCORE_ENVIRONMENT = "Development"
+$env:Application__PublicBaseUrl = "http://localhost:5217"
+$env:Smtp__Enabled = "true"
+$env:Smtp__Host = "<provider SMTP host>"
+$env:Smtp__Port = "587"
+$env:Smtp__EnableSsl = "true"
+$env:Smtp__FromEmail = "<provider-approved sender address>"
+$env:Smtp__Username = "<SMTP username>"
+# Set Smtp__Password securely using your local environment or secret manager.
+dotnet run --project NuctiusNow/NuctiusNow --no-launch-profile --urls http://localhost:5217
+```
+
+Use your deployed application's HTTPS origin for `Application__PublicBaseUrl` in production. `System.Net.Mail.SmtpClient` supports STARTTLS (usually port 587); it does not support implicit TLS on port 465. Use your provider's STARTTLS endpoint and, when required, an app password or SMTP credential instead of your normal login password. The server log's `Activation email error` identifies missing configuration, authentication, TLS or network failures. Never share passwords or activation tokens from logs.
+
 ## Regression tests
 
 The integration suite requires PostgreSQL and an account permitted to create temporary databases:

@@ -268,3 +268,28 @@
 }
 .activation-notice strong { display:block; color:var(--text-primary); font-size:.84rem; }
 .activation-notice p { color:var(--text-secondary); font-size:.76rem; line-height:1.45; margin:.25rem 0 0; }
+
+/* Topic preferences share the registration card's dark surfaces and red accents. */
+.preferences-setup h3 { margin: 1.5rem 0 .5rem; color: #fff; font-size: 1.15rem; font-weight: 700; }
+.preferences-description { margin: 0 0 1.25rem; color: rgba(255,255,255,.65); font-size: .875rem; line-height: 1.6; }
+.pref-input-row { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: .5rem .65rem; }
+.pref-input-label { grid-column: 1 / -1; color: rgba(255,255,255,.65); font-size: .75rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
+.pref-input-row input { min-width: 0; width: 100%; box-sizing: border-box; min-height: 48px; padding: .8rem 1rem; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.12); border-radius: var(--radius-sm); color: #fff; font: inherit; font-size: .9rem; transition: border-color .2s, background .2s; }
+.pref-input-row input::placeholder { color: rgba(255,255,255,.4); }
+.btn-add { min-height: 48px; padding: .75rem 1.1rem; border: 1px solid rgba(230,57,70,.5); border-radius: var(--radius-sm); background: rgba(230,57,70,.16); color: #fff; font: inherit; font-size: .875rem; font-weight: 700; cursor: pointer; transition: background .2s; }
+.btn-add:hover:not(:disabled) { background: var(--accent); }
+.btn-add:disabled { opacity: .45; cursor: default; }
+.pref-list { display: flex; flex-wrap: wrap; gap: .6rem; margin: 1rem 0 1.25rem; }
+.pref-empty { margin: 0; padding: .9rem; width: 100%; border: 1px dashed rgba(255,255,255,.15); border-radius: var(--radius-sm); color: rgba(255,255,255,.55); font-size: .8rem; line-height: 1.5; }
+.pref-chip { display: inline-flex; align-items: center; gap: .5rem; max-width: 100%; padding: .3rem .35rem .3rem .85rem; border: 1px solid rgba(230,57,70,.3); border-radius: var(--radius-pill); background: rgba(230,57,70,.1); color: #fff; font-size: .825rem; }
+.pref-chip > span { min-width: 0; overflow-wrap: anywhere; }
+.chip-remove { flex-shrink: 0; display: grid; place-items: center; width: 32px; height: 32px; border: none; border-radius: 50%; background: transparent; color: #fca5a5; font-size: .8rem; cursor: pointer; }
+.chip-remove:hover { background: rgba(230,57,70,.25); color: #fff; }
+.pref-input-row input:focus-visible, .btn-add:focus-visible, .chip-remove:focus-visible, .pref-actions .btn-create:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.activation-notice strong { color: #fff; }
+.activation-notice p { color: rgba(255,255,255,.65); }
+@media (max-width: 380px) {
+    .register-body { padding: 1.25rem; }
+    .pref-input-row { grid-template-columns: minmax(0,1fr); }
+    .pref-actions .btn-create { font-size: .8rem; letter-spacing: .02em; }
+}
