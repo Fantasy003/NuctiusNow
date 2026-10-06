@@ -1,8 +1,10 @@
-﻿@page "/login"
+@page "/login"
+@using NuctiusNow.Services
 @rendermode InteractiveServer
 @inject AuthService authService
 @inject NavigationManager Navigation
 @inject UserSessionService sessionService
+@inject EmailVerificationService EmailVerification
 
 <PageTitle>Login - NuctiusNow</PageTitle>
 

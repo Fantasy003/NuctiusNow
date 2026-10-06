@@ -1,3 +1,4 @@
+@using NuctiusNow.Services
 @page "/user-settings"
 @rendermode InteractiveServer
 @using Microsoft.AspNetCore.Components.Web
@@ -6,6 +7,8 @@
 @inject IJSRuntime JSRuntime
 @inject UserSessionService sessionService
 @inject NavigationManager Navigation
+@inject EmailVerificationService EmailVerification
+@inject UserBlockedSourceService BlockedSourceService
 
 <PageTitle>User Settings - NuctiusNow</PageTitle>
 
@@ -123,6 +126,67 @@ else
                 </div>
             </article>
 
+            <article class="settings-panel source-panel">
+                <div class="settings-panel-heading">
+                    <div>
+                        <span class="panel-kicker">AI SOURCE CONTROL</span>
+                        <h2>Blocked news sources</h2>
+                    </div>
+                    <span class="current-theme">@blockedSourceDomains.Count selected</span>
+                </div>
+
+                <p class="settings-description">
+                    Add domains that NuctiusNow's news search must exclude. Use only the domain, for example
+                    <strong>example.com</strong>. This setting is independent from the three-hour profile update cooldown.
+                </p>
+
+                <div class="source-filter-input-row">
+                    <input type="text"
+                           @bind="newBlockedSource"
+                           @bind:event="oninput"
+                           @onkeyup="HandleBlockedSourceKeyUp"
+                           placeholder="e.g. example.com"
+                           maxlength="160" />
+                    <button type="button"
+                            class="add-preference-button"
+                            @onclick="AddBlockedSource"
+                            title="Add blocked source">+</button>
+                </div>
+
+                <div class="source-chip-list">
+                    @foreach (var source in blockedSourceDomains)
+                    {
+                        <span class="source-chip" @key="source">
+                            <span>@source</span>
+                            <button type="button"
+                                    @onclick="() => RemoveBlockedSource(source)"
+                                    aria-label="Remove @source">×</button>
+                        </span>
+                    }
+
+                    @if (blockedSourceDomains.Count == 0)
+                    {
+                        <span class="empty-preferences">No source exclusions configured.</span>
+                    }
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(sourceFilterMessage))
+                {
+                    <div class="settings-alert @(sourceFilterSaveSucceeded ? "success" : "error")">
+                        @sourceFilterMessage
+                    </div>
+                }
+
+                <div class="source-filter-actions">
+                    <button type="button"
+                            class="settings-primary-button"
+                            @onclick="SaveBlockedSources"
+                            disabled="@isSavingBlockedSources">
+                        @(isSavingBlockedSources ? "Saving…" : "Save source filters")
+                    </button>
+                </div>
+            </article>
+
             <article class="settings-panel theme-panel">
                 <div class="settings-panel-heading">
                     <div>
@@ -206,6 +270,11 @@ else
     private string saveMessage = string.Empty;
     private string validationMessage = string.Empty;
     private string newPreferenceInput = string.Empty;
+    private string newBlockedSource = string.Empty;
+    private List<string> blockedSourceDomains = new();
+    private bool isSavingBlockedSources;
+    private bool sourceFilterSaveSucceeded;
+    private string sourceFilterMessage = string.Empty;
 
     private readonly HashSet<string> blocklist = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -242,6 +311,8 @@ else
             ConfirmPassword = string.Empty,
             Preferences = await authService.GetUserPreferencesAsync(sessionService.UserId.Value)
         };
+
+        blockedSourceDomains = await BlockedSourceService.GetAsync(sessionService.UserId.Value);
 
         await RefreshProfileUpdateStatusAsync();
         userLoaded = true;
@@ -316,6 +387,93 @@ else
     {
         if (!profileUpdateLocked)
             userModel.Preferences.Remove(target);
+    }
+
+
+    private void HandleBlockedSourceKeyUp(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            AddBlockedSource();
+    }
+
+    private void AddBlockedSource()
+    {
+        var value = NormalizeBlockedSourceInput(newBlockedSource);
+        sourceFilterMessage = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            sourceFilterMessage = "Enter a valid domain such as example.com.";
+            sourceFilterSaveSucceeded = false;
+            return;
+        }
+
+        if (!blockedSourceDomains.Contains(value, StringComparer.OrdinalIgnoreCase))
+            blockedSourceDomains.Add(value);
+
+        blockedSourceDomains = blockedSourceDomains
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
+            .Take(50)
+            .ToList();
+
+        newBlockedSource = string.Empty;
+    }
+
+    private void RemoveBlockedSource(string source)
+    {
+        blockedSourceDomains.RemoveAll(
+            x => string.Equals(x, source, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string NormalizeBlockedSourceInput(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return string.Empty;
+
+        var input = value.Trim();
+
+        if (!input.Contains("://", StringComparison.Ordinal))
+            input = "https://" + input;
+
+        if (!Uri.TryCreate(input, UriKind.Absolute, out var uri))
+            return string.Empty;
+
+        var host = uri.Host.Trim().ToLowerInvariant();
+        if (host.StartsWith("www.", StringComparison.Ordinal))
+            host = host[4..];
+
+        return host.Contains('.', StringComparison.Ordinal) && host.Length >= 3
+            ? host
+            : string.Empty;
+    }
+
+    private async Task SaveBlockedSources()
+    {
+        if (isSavingBlockedSources || !sessionService.UserId.HasValue)
+            return;
+
+        isSavingBlockedSources = true;
+        sourceFilterMessage = string.Empty;
+        sourceFilterSaveSucceeded = false;
+
+        try
+        {
+            var result = await BlockedSourceService.ReplaceAsync(
+                sessionService.UserId.Value,
+                blockedSourceDomains);
+
+            sourceFilterSaveSucceeded = result.Success;
+            sourceFilterMessage = result.Message;
+        }
+        catch (Exception ex)
+        {
+            sourceFilterMessage = "Could not save source filters: " + ex.Message;
+        }
+        finally
+        {
+            isSavingBlockedSources = false;
+        }
     }
 
     private async Task SaveChanges()

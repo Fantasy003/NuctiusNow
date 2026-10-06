@@ -342,3 +342,70 @@
     .settings-actions-bar { justify-content: stretch; }
     .settings-actions-bar > button { flex: 1; }
 }
+
+
+.source-filter-input-row {
+    display: flex;
+    gap: .55rem;
+    margin-top: 1rem;
+}
+
+.source-filter-input-row input {
+    flex: 1;
+    min-width: 0;
+    background: var(--bg-input);
+    border: 1px solid var(--border-light);
+    color: var(--text-primary);
+    border-radius: var(--radius-sm);
+    padding: .75rem .85rem;
+    outline: none;
+}
+
+.source-filter-input-row input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+.source-chip-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .5rem;
+    margin-top: .9rem;
+}
+
+.source-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: .45rem;
+    padding: .35rem .5rem .35rem .7rem;
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-pill);
+    background: var(--bg-input);
+    color: var(--text-secondary);
+    font-size: .75rem;
+}
+
+.source-chip button {
+    border: 0;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 1rem;
+    line-height: 1;
+    padding: .05rem .15rem;
+}
+
+.source-chip button:hover {
+    color: var(--text-primary);
+}
+
+.source-filter-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 1rem;
+}
+
+@media (max-width: 700px) {
+    .source-filter-input-row {
+        align-items: stretch;
+    }
+}

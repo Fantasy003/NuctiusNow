@@ -20,6 +20,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<UserNews> UserNews { get; set; }
     public DbSet<NewsComment> NewsComments { get; set; }
     public DbSet<UserInterestKeyword> UserInterestKeywords { get; set; }
+    public DbSet<UserBlockedSource> UserBlockedSources { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -57,6 +58,16 @@ public class ApplicationDbContext : DbContext
 
         modelBuilder.Entity<UserInterestKeyword>()
             .HasIndex(k => new { k.IdUser, k.Keyword })
+            .IsUnique();
+
+        modelBuilder.Entity<UserBlockedSource>()
+            .HasOne(s => s.User)
+            .WithMany()
+            .HasForeignKey(s => s.IdUser)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<UserBlockedSource>()
+            .HasIndex(s => new { s.IdUser, s.SourceDomain })
             .IsUnique();
     }
 }

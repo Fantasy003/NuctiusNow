@@ -78,7 +78,79 @@ else
                             <p><i>The AI summary is not available right now.</i></p>
                         }
                     </section>
+                    @if (currentNews.DetailNews?.BodySource == "AiGenerated" &&
+                                    !string.IsNullOrWhiteSpace(currentNews.DetailNews.FullBodyText))
+                    {
+                        <section class="tts-player">
 
+                            <div class="tts-player-heading">
+                                <span class="detail-section-label">LISTEN TO ARTICLE</span>
+                            </div>
+
+                            <div class="tts-controls">
+
+                                <button class="tts-btn tts-primary"
+                                        @onclick="StartTts">
+                                    <span>🔊</span>
+                                    <span>Listen</span>
+                                </button>
+
+                                <button class="tts-btn"
+                                        @onclick="PauseTts"
+                                        disabled="@(!ttsUnlocked)">
+                                    <span>⏸</span>
+                                    <span>Pause</span>
+                                </button>
+
+                                <button class="tts-btn"
+                                        @onclick="ResumeTts"
+                                        disabled="@(!ttsUnlocked)">
+                                    <span>▶</span>
+                                    <span>Resume</span>
+                                </button>
+
+                                <button class="tts-btn"
+                                        @onclick="StopTts"
+                                        disabled="@(!ttsUnlocked)">
+                                    <span>■</span>
+                                    <span>Stop</span>
+                                </button>
+
+                                <select class="tts-speed"
+                                        @bind="ttsRate"
+                                        disabled="@(!ttsUnlocked)">
+                                    <option value="0.75">0.75×</option>
+                                    <option value="1.0">1.0×</option>
+                                    <option value="1.25">1.25×</option>
+                                    <option value="1.5">1.5×</option>
+                                    <option value="1.75">1.75×</option>
+                                </select>
+
+                            </div>
+
+                            @if (!ttsUnlocked)
+                            {
+                                <div class="tts-hint">
+                                    Press <strong>Listen</strong> to start playback and unlock the controls.
+                                </div>
+                            }
+
+                            @if (ttsUnlocked)
+                            {
+                                <div class="tts-status">
+                                    @if (ttsPlaying)
+                                    {
+                                        <span>Listening to the AI-generated article…</span>
+                                    }
+                                    else
+                                    {
+                                        <span>Playback ready.</span>
+                                    }
+                                </div>
+                            }
+
+                        </section>
+                    }
                     <section class="full-article-section detail-reading-section">
                         <div class="detail-section-label">AI GENERATED ARTICLE</div>
                         @if (isGeneratingArticle)
@@ -576,5 +648,136 @@ else
         public string Title { get; set; } = string.Empty;
         public string Url { get; set; } = string.Empty;
         public string Owner { get; set; } = "Source";
+    }
+
+    private bool ttsUnlocked;
+    private bool ttsPlaying;
+    private string ttsLanguage = "en-US";
+    private double ttsRate = 1.0;
+
+    private DotNetObjectReference<NewsDetails>? ttsDotNetRef;
+
+    private async Task ReadArticle()
+    {
+        var article = currentNews?.DetailNews?.FullBodyText;
+
+        if (string.IsNullOrWhiteSpace(article))
+            return;
+
+        await JS.InvokeVoidAsync(
+            "nuctiusTts.speak",
+            article,
+            ttsLanguage,
+            ttsRate);
+    }
+
+    private async Task PauseArticle()
+    {
+        await JS.InvokeVoidAsync("nuctiusTts.pause");
+    }
+
+    private async Task ResumeArticle()
+    {
+        await JS.InvokeVoidAsync("nuctiusTts.resume");
+    }
+
+    private async Task StopArticle()
+    {
+        await JS.InvokeVoidAsync("nuctiusTts.stop");
+    }
+
+    private async Task StartTts()
+    {
+        if (currentNews?.DetailNews == null)
+            return;
+
+        var title = currentNews.DetailNews.Keyword ?? string.Empty;
+        var summary = currentNews.DetailNews.AiSummary ?? string.Empty;
+        var article = currentNews.DetailNews.FullBodyText ?? string.Empty;
+
+        var text = string.Join(
+            "\n\n",
+            new[]
+            {
+            title,
+            summary,
+            article
+            }
+            .Where(x => !string.IsNullOrWhiteSpace(x)));
+
+        if (string.IsNullOrWhiteSpace(text))
+            return;
+
+        ttsUnlocked = true;
+        ttsPlaying = true;
+
+        ttsDotNetRef ??=
+            DotNetObjectReference.Create(this);
+
+        await JS.InvokeAsync<bool>(
+            "nuctiusTts.register",
+            ttsDotNetRef);
+
+        await JS.InvokeAsync<bool>(
+            "nuctiusTts.speak",
+            text,
+            ttsRate,
+            "en-US");
+
+        StateHasChanged();
+    }
+
+    private async Task PauseTts()
+    {
+        if (!ttsUnlocked)
+            return;
+
+        await JS.InvokeVoidAsync("nuctiusTts.pause");
+
+        ttsPlaying = false;
+    }
+
+    private async Task ResumeTts()
+    {
+        if (!ttsUnlocked)
+            return;
+
+        await JS.InvokeVoidAsync("nuctiusTts.resume");
+
+        ttsPlaying = true;
+    }
+
+    private async Task StopTts()
+    {
+        if (!ttsUnlocked)
+            return;
+
+        await JS.InvokeVoidAsync("nuctiusTts.stop");
+
+        ttsPlaying = false;
+    }
+
+    [JSInvokable]
+    public Task OnTtsEnded()
+    {
+        ttsPlaying = false;
+
+        return InvokeAsync(StateHasChanged);
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        ttsUnlocked = false;
+        ttsPlaying = false;
+        ttsRate = 1.0;
+
+        try
+        {
+            await JS.InvokeVoidAsync("nuctiusTts.stop");
+        }
+        catch
+        {
+            // JS may not be available during an early lifecycle phase.
+        }
     }
 }

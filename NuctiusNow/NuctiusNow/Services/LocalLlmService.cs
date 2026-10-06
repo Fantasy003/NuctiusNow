@@ -47,6 +47,12 @@ public interface ILocalLlmService
     Task<string?> SearchImageUrlAsync(
         string query,
     CancellationToken cancellationToken = default);
+
+    Task<string?> ChatAsync(
+    string userMessage,
+    string? systemContext = null,
+    IReadOnlyList<(string Role, string Content)>? history = null,
+    CancellationToken cancellationToken = default);
 }
 
 public class LocalLlmService : ILocalLlmService
@@ -2539,6 +2545,55 @@ private async Task<NativeChatResponse> ParseNativeChatResponseAsync(
         return builder.Uri.ToString();
     }
 
+    public async Task<string?> ChatAsync(
+    string userMessage,
+    string? systemContext = null,
+    IReadOnlyList<(string Role, string Content)>? history = null,
+    CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(userMessage))
+            return null;
+
+        var prompt = new StringBuilder();
+
+        prompt.AppendLine(
+            systemContext ??
+            """
+        You are NuctiusNow's AI assistant.
+
+        Answer the user's question clearly and naturally.
+        Do not invent facts.
+        If you do not know something, say so.
+        Keep answers concise unless the user asks for detail.
+        """);
+
+        prompt.AppendLine();
+        prompt.AppendLine("CONVERSATION:");
+
+        if (history != null)
+        {
+            foreach (var item in history.TakeLast(10))
+            {
+                var role = item.Role.Equals("assistant",
+                    StringComparison.OrdinalIgnoreCase)
+                    ? "Assistant"
+                    : "User";
+
+                prompt.AppendLine($"{role}: {item.Content}");
+            }
+        }
+
+        prompt.AppendLine();
+        prompt.AppendLine($"User: {userMessage}");
+        prompt.AppendLine();
+        prompt.AppendLine("Assistant:");
+
+        return await CallPlainNativeChatAsync(
+            prompt.ToString(),
+            maxOutputTokens: 700,
+            temperature: 0.2,
+            cancellationToken);
+    }
 }
 
 

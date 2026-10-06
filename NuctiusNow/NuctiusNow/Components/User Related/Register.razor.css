@@ -243,3 +243,28 @@
         .captcha-v3-disclaimer a:hover {
             color: rgba(255, 255, 255, 0.6);
         }
+
+
+.activation-notice {
+    display: flex;
+    align-items: flex-start;
+    gap: .8rem;
+    margin-bottom: 1.25rem;
+    padding: .9rem 1rem;
+    border: 1px solid rgba(230, 57, 70, .25);
+    border-radius: var(--radius-md);
+    background: rgba(230, 57, 70, .07);
+}
+.activation-notice-icon {
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    flex: 0 0 32px;
+    border-radius: 10px;
+    background: var(--accent);
+    color: #fff;
+    font-weight: 800;
+}
+.activation-notice strong { display:block; color:var(--text-primary); font-size:.84rem; }
+.activation-notice p { color:var(--text-secondary); font-size:.76rem; line-height:1.45; margin:.25rem 0 0; }

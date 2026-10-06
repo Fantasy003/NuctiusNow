@@ -1095,3 +1095,84 @@
     background: color-mix(in srgb, var(--bg-card) 94%, transparent);
     box-shadow: 0 8px 32px rgba(0, 0, 0, .28);
 }
+
+.tts-player {
+    margin-top: 2rem;
+    padding: 1rem;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--bg-card);
+}
+
+.tts-player-heading {
+    margin-bottom: 0.9rem;
+}
+
+.tts-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    flex-wrap: wrap;
+}
+
+.tts-btn,
+.tts-speed {
+    height: 38px;
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    background: var(--bg-page);
+    color: var(--text-primary);
+    padding: 0 0.85rem;
+    font-size: 0.82rem;
+    font-weight: 600;
+    transition: all 0.15s ease;
+}
+
+.tts-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    cursor: pointer;
+}
+
+    .tts-btn:hover:not(:disabled) {
+        border-color: var(--accent);
+        transform: translateY(-1px);
+    }
+
+.tts-primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: white;
+}
+
+.tts-btn:disabled,
+.tts-speed:disabled {
+    opacity: 0.38;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.tts-speed {
+    cursor: pointer;
+    min-width: 82px;
+}
+
+.tts-hint,
+.tts-status {
+    margin-top: 0.7rem;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+@media (max-width: 600px) {
+    .tts-controls {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .tts-btn,
+    .tts-speed {
+        width: 100%;
+    }
+}

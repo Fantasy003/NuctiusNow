@@ -34,7 +34,11 @@ builder.Services.AddScoped<UserSessionService>();
 builder.Services.AddScoped<RecommendationEngine>();
 builder.Services.AddScoped<CategoryNewsService>(); // ADDED
 // Registro del servicio LLM local (llamar a un servidor LLM local por HTTP)
-builder.Services.AddScoped<ILocalLlmService, LocalLlmService>();
+builder.Services.AddScoped<LocalLlmService>();
+    builder.Services.AddScoped<ILocalLlmService, UserAwareLocalLlmService>();
+builder.Services.AddScoped<IEmailSender, SmtpEmailSender>();
+builder.Services.AddScoped<EmailVerificationService>();
+builder.Services.AddScoped<UserBlockedSourceService>();
 // Servicio para almacenar noticias capturadas desde la web
 builder.Services.AddScoped<NewsIngestService>();
 // Servicio para cargar detalles de noticias y comentarios

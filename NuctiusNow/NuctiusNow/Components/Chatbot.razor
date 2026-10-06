@@ -1,0 +1,211 @@
+@using NuctiusNow.Services
+@using Microsoft.AspNetCore.Components.Web
+@inject ILocalLlmService LlmService
+@inject NavigationManager Navigation
+
+<div class="chatbot-root">
+    @if (!isOpen)
+    {
+        <button type="button" class="chatbot-fab" @onclick="OpenChat" aria-label="Open NuctiusNow AI assistant">
+            <span class="chatbot-fab-mark">N</span>
+            <span class="chatbot-fab-dot"></span>
+        </button>
+    }
+    else
+    {
+        <section class="chatbot-panel" aria-label="NuctiusNow AI assistant">
+            <header class="chatbot-header">
+                <div class="chatbot-brand">
+                    <div class="chatbot-avatar">N</div>
+                    <div>
+                        <div class="chatbot-eyebrow">NUCTIUSNOW / AI</div>
+                        <strong>NuctiusNow AI</strong>
+                        <span><i></i> Online</span>
+                    </div>
+                </div>
+
+                <div class="chatbot-header-actions">
+                    <button type="button" class="chatbot-icon-button" @onclick="ClearChat" title="New conversation" aria-label="New conversation">↺</button>
+                    <button type="button" class="chatbot-icon-button" @onclick="CloseChat" title="Close assistant" aria-label="Close assistant">×</button>
+                </div>
+            </header>
+
+            <div class="chatbot-context">
+                <span>Current page</span>
+                <strong>@CurrentPageLabel</strong>
+            </div>
+
+            <div class="chatbot-messages">
+                @foreach (var message in messages)
+                {
+                    <div class="chat-row @(message.Role == "user" ? "user-row" : "assistant-row")">
+                        <div class="chat-message @(message.Role == "user" ? "chat-user" : "chat-assistant")">
+                            @message.Content
+                        </div>
+                    </div>
+                }
+
+                @if (isThinking)
+                {
+                    <div class="chat-row assistant-row">
+                        <div class="chat-message chat-assistant chatbot-thinking">
+                            <span></span><span></span><span></span>
+                        </div>
+                    </div>
+                }
+            </div>
+
+            <div class="chatbot-input-area">
+                <textarea @bind="userInput"
+                          @bind:event="oninput"
+                          @onkeydown="HandleKeyDown"
+                          placeholder="Ask NuctiusNow AI anything…"
+                          rows="2"
+                          maxlength="2000"
+                          aria-label="Message"></textarea>
+
+                <div class="chatbot-input-footer">
+                    <span class="chatbot-hint">Enter to send · Shift+Enter for a new line</span>
+                    <button type="button"
+                            class="chatbot-send"
+                            @onclick="SendMessage"
+                            disabled="@(isThinking || string.IsNullOrWhiteSpace(userInput))"
+                            aria-label="Send message">
+                        <span>Send</span><span aria-hidden="true">→</span>
+                    </button>
+                </div>
+            </div>
+        </section>
+    }
+</div>
+
+@code
+{
+    private bool isOpen;
+    private bool isThinking;
+    private string userInput = string.Empty;
+
+    private readonly List<ChatMessage> messages = new();
+
+    private string CurrentPageLabel
+    {
+        get
+        {
+            var path = Navigation.ToBaseRelativePath(Navigation.Uri);
+            if (string.IsNullOrWhiteSpace(path))
+                return "Home";
+
+            return path switch
+            {
+                "user-settings" => "User Settings",
+                "just-for-you" => "Just For You",
+                "search" => "Search",
+                _ when path.StartsWith("news-detail/", StringComparison.OrdinalIgnoreCase) => "News Details",
+                _ => path.Replace('-', ' ')
+                        .Split('/', StringSplitOptions.RemoveEmptyEntries)
+                        .FirstOrDefault() is { } value
+                    ? char.ToUpperInvariant(value[0]) + value[1..]
+                    : "NuctiusNow"
+            };
+        }
+    }
+
+    private void OpenChat()
+    {
+        isOpen = true;
+
+        if (messages.Count == 0)
+        {
+            messages.Add(new ChatMessage
+            {
+                Role = "assistant",
+                Content = "Hello! I'm the NuctiusNow AI assistant. Ask me about the portal, a news topic, or anything you'd like explained."
+            });
+        }
+    }
+
+    private void CloseChat() => isOpen = false;
+
+    private void ClearChat()
+    {
+        messages.Clear();
+        messages.Add(new ChatMessage
+        {
+            Role = "assistant",
+            Content = "New conversation started. What would you like to know?"
+        });
+    }
+
+    private async Task SendMessage()
+    {
+        var text = userInput.Trim();
+        if (string.IsNullOrWhiteSpace(text) || isThinking)
+            return;
+
+        userInput = string.Empty;
+        messages.Add(new ChatMessage { Role = "user", Content = text });
+        isThinking = true;
+
+        try
+        {
+            // The current user message is passed separately to ChatAsync,
+            // so it must not be duplicated in the history.
+            var history = messages
+                .TakeLast(11)
+                .SkipLast(1)
+                .Select(x => (x.Role, x.Content))
+                .ToList();
+
+            var systemContext =
+                "You are NuctiusNow's website AI assistant.\n" +
+                $"Current page: {CurrentPageLabel}.\n" +
+                $"Current route: {Navigation.ToBaseRelativePath(Navigation.Uri)}.\n\n" +
+                "Answer naturally and clearly.\n" +
+                "Never invent facts.\n" +
+                "Explain news topics only from information you can support.\n" +
+                "Do not claim to have searched the web unless search results were actually supplied by the application.";
+
+            var response = await LlmService.ChatAsync(
+                text,
+                systemContext: systemContext,
+                history: history);
+
+            response = string.IsNullOrWhiteSpace(response)
+                ? "I couldn't generate a response right now."
+                : response.Trim();
+
+            if (response.StartsWith("Assistant:", StringComparison.OrdinalIgnoreCase))
+                response = response["Assistant:".Length..].Trim();
+
+            messages.Add(new ChatMessage
+            {
+                Role = "assistant",
+                Content = response
+            });
+        }
+        catch
+        {
+            messages.Add(new ChatMessage
+            {
+                Role = "assistant",
+                Content = "The AI assistant is temporarily unavailable. Please try again in a moment."
+            });
+        }
+        finally
+        {
+            isThinking = false;
+        }
+    }
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !e.ShiftKey)
+            await SendMessage();
+    }
+
+    private sealed class ChatMessage
+    {
+        public string Role { get; set; } = string.Empty;
+        public string Content { get; set; } = string.Empty;
+    }
+}

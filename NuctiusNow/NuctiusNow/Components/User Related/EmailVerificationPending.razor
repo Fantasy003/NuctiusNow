@@ -1,0 +1,86 @@
+@using NuctiusNow.Services
+@page "/email-verification-pending"
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Components
+@inject EmailVerificationService EmailVerification
+@inject NavigationManager Navigation
+
+<PageTitle>Email verification - NuctiusNow</PageTitle>
+
+<div class="verification-page">
+    <section class="verification-card">
+        <span class="section-kicker">NUCTIUSNOW / ACCOUNT</span>
+        <div class="verification-icon">✉</div>
+        <h1>Verify your email</h1>
+        <p>We need to verify your email address before NuctiusNow can grant access to the portal.</p>
+
+        @if (!string.IsNullOrWhiteSpace(email))
+        {
+            <div class="verification-email">@email</div>
+        }
+
+        @if (!string.IsNullOrWhiteSpace(message))
+        {
+            <div class="verification-message @(success ? "success" : "error")">@message</div>
+        }
+
+        <label class="verification-field">
+            <span>Email address</span>
+            <input type="email" @bind="email" placeholder="name@example.com" />
+        </label>
+
+        <button type="button"
+                class="verification-button"
+                @onclick="Resend"
+                disabled="@isSending">
+            @(isSending ? "Sending…" : "Send activation email")
+        </button>
+
+        <button type="button" class="verification-link" @onclick="GoToLogin">
+            Back to login
+        </button>
+    </section>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "email")]
+    private string? QueryEmail { get; set; }
+
+    private string email = string.Empty;
+    private bool isSending;
+    private bool success;
+    private string message = string.Empty;
+
+    protected override void OnParametersSet()
+    {
+        if (!string.IsNullOrWhiteSpace(QueryEmail))
+            email = QueryEmail.Trim();
+    }
+
+    private async Task Resend()
+    {
+        if (isSending)
+            return;
+
+        isSending = true;
+        message = string.Empty;
+        success = false;
+
+        try
+        {
+            var result = await EmailVerification.ResendAsync(email);
+            success = result.Success;
+            message = result.Message;
+        }
+        catch
+        {
+            message = "The activation email could not be sent right now.";
+        }
+        finally
+        {
+            isSending = false;
+        }
+    }
+
+    private void GoToLogin() => Navigation.NavigateTo("/login");
+}

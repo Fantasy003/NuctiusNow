@@ -1,0 +1,65 @@
+@using NuctiusNow.Services
+@page "/activate-account/{Token}"
+@rendermode InteractiveServer
+@inject EmailVerificationService EmailVerification
+@inject NavigationManager Navigation
+
+<PageTitle>Activate account - NuctiusNow</PageTitle>
+
+<div class="verification-page">
+    <section class="verification-card">
+        <span class="section-kicker">NUCTIUSNOW / ACCOUNT</span>
+
+        @if (processing)
+        {
+            <h1>Activating your account…</h1>
+            <p>Please wait while we verify your email address.</p>
+            <div class="verification-spinner"></div>
+        }
+        else if (success)
+        {
+            <div class="verification-icon success">✓</div>
+            <h1>Email verified</h1>
+            <p>@message</p>
+            <button type="button" class="verification-button" @onclick="GoToLogin">Continue to login</button>
+        }
+        else
+        {
+            <div class="verification-icon error">!</div>
+            <h1>Activation failed</h1>
+            <p>@message</p>
+            <button type="button" class="verification-button" @onclick="GoToPending">Request a new link</button>
+        }
+    </section>
+</div>
+
+@code {
+    [Parameter]
+    public string Token { get; set; } = string.Empty;
+
+    private bool processing = true;
+    private bool success;
+    private string message = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var result = await EmailVerification.ActivateAsync(Token);
+            success = result.Success;
+            message = result.Message;
+        }
+        catch
+        {
+            success = false;
+            message = "The activation link could not be processed.";
+        }
+        finally
+        {
+            processing = false;
+        }
+    }
+
+    private void GoToLogin() => Navigation.NavigateTo("/login");
+    private void GoToPending() => Navigation.NavigateTo("/email-verification-pending");
+}

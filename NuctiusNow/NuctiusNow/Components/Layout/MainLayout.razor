@@ -5,11 +5,15 @@
 @implements IDisposable
 
 <div class="@(ThemeEnabled ? $"theme-{ThemeState.CurrentTheme} app-shell" : "app-shell")">
+
     <NavMenu />
 
     <main class="page-body">
         @Body
     </main>
+
+    <Chatbot />
+
 </div>
 
 @code {
