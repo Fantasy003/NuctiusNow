@@ -994,7 +994,8 @@ public class RecommendationEngine
     public async Task<List<PersonalizedRecommendation>> GetPersonalizedRecommendationsAsync(
         int userId,
         CancellationToken cancellationToken = default,
-        bool explorationMode = false)
+        bool explorationMode = false,
+        Func<PersonalizedRecommendation, Task>? onRecommendation = null)
     {
         if (explorationMode)
             return await GetExplorationRecommendationsAsync(userId, cancellationToken);
@@ -1031,22 +1032,49 @@ public class RecommendationEngine
 
         var personalizationContext = await BuildUserPersonalizationContextAsync(userId, cancellationToken);
 
-        var blockedUrls = (await _context.News
-                .AsNoTracking()
-                .Select(n => n.Hyperlink)
-                .ToListAsync(cancellationToken))
-            .Select(NormalizeUrl)
-            .Where(u => !string.IsNullOrWhiteSpace(u))
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        // Deduplicate this feed, not the entire shared news archive.
+        var blockedUrls = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var blockedTitles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        var blockedTitles = (await _context.News
-                .AsNoTracking()
-                .Where(n => n.DetailNews != null)
-                .Select(n => n.DetailNews!.Keyword)
-                .ToListAsync(cancellationToken))
-            .Select(NormalizeTitle)
-            .Where(t => !string.IsNullOrWhiteSpace(t))
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        async Task<PersonalizedRecommendation?> FindStoryAsync(
+            string name, int tagId, int weight, bool supplemental)
+        {
+            using var searchTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            searchTimeout.CancelAfter(TimeSpan.FromSeconds(45));
+            PersonalizedRecommendation? result = null;
+            try
+            {
+                result = await SearchPreferenceStoryAsync(userId, name, tagId, weight,
+                    personalizationContext, interestTerms, explicitPreferenceNames, supplemental,
+                    blockedUrls, blockedTitles, searchTimeout.Token);
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                _logger?.LogWarning("Personalized search timed out for {Preference}; trying cached news", name);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger?.LogWarning(ex, "Personalized search failed for {Preference}; trying cached news", name);
+            }
+
+            if (result == null)
+            {
+                var blockedDomains = await _context.UserBlockedSources.AsNoTracking()
+                    .Where(x => x.IdUser == userId).Select(x => x.SourceDomain).ToListAsync(cancellationToken);
+                var cached = await _context.News.AsNoTracking().Include(n => n.Tag).Include(n => n.DetailNews)
+                    .Where(n => n.DetailNews != null && n.IdTag == tagId)
+                    .OrderBy(n => _context.UserNews.Any(v => v.IdUser == userId && v.IdNews == n.IdNews && v.Seen))
+                    .ThenByDescending(n => n.DetailNews!.NewsDate).Take(100).ToListAsync(cancellationToken);
+                var news = cached.FirstOrDefault(n => !blockedUrls.Contains(NormalizeUrl(n.Hyperlink)) &&
+                    !UserBlockedSourceService.IsBlocked(n.Hyperlink, blockedDomains));
+                if (news != null)
+                {
+                    blockedUrls.Add(NormalizeUrl(news.Hyperlink));
+                    result = new PersonalizedRecommendation(news, name, weight, supplemental);
+                }
+            }
+            return result;
+        }
 
         foreach (var userPreference in distinctPreferences)
         {
@@ -1054,21 +1082,14 @@ public class RecommendationEngine
             var preference = userPreference.Preference!;
             var preferenceName = preference.Tag?.Name ?? preference.PreferenceName ?? "News";
 
-            var recommendation = await SearchPreferenceStoryAsync(
-                userId,
-                preferenceName,
-                preference.IdTag,
-                userPreference.Weight,
-                personalizationContext,
-                interestTerms,
-                explicitPreferenceNames,
-                isSupplemental: false,
-                blockedUrls,
-                blockedTitles,
-                cancellationToken);
+            var recommendation = await FindStoryAsync(
+                preferenceName, preference.IdTag, userPreference.Weight, supplemental: false);
 
             if (recommendation != null)
+            {
                 output.Add(recommendation);
+                if (onRecommendation != null) await onRecommendation(recommendation);
+            }
         }
 
         var fillPreferenceIndex = 0;
@@ -1081,21 +1102,16 @@ public class RecommendationEngine
             var preference = userPreference.Preference!;
             var preferenceName = preference.Tag?.Name ?? preference.PreferenceName ?? "News";
 
-            var recommendation = await SearchPreferenceStoryAsync(
-                userId,
-                preferenceName,
-                preference.IdTag,
-                userPreference.Weight,
-                personalizationContext,
-                interestTerms,
-                explicitPreferenceNames,
-                isSupplemental: true,
-                blockedUrls,
-                blockedTitles,
-                cancellationToken);
+            var recommendation = await FindStoryAsync(
+                preferenceName, preference.IdTag, userPreference.Weight, supplemental: true);
 
             if (recommendation != null)
+            {
                 output.Add(recommendation);
+                if (onRecommendation != null) await onRecommendation(recommendation);
+            }
+
+            if (recommendation == null) break;
 
             fillPreferenceIndex++;
             fillAttempts++;
@@ -1225,14 +1241,11 @@ public class RecommendationEngine
             if (!string.IsNullOrWhiteSpace(relatedTerm))
                 searchQuery += $" {relatedTerm}";
 
-            if (attempt > 1)
-                searchQuery += " different story";
-
             var results = await _llmService.SearchNewsAsync(
                 searchQuery,
                 maxResults: 8,
                 cancellationToken: cancellationToken,
-                startingPage: (attempt - 1) * 3 + 1);
+                startingPage: 1);
 
             var candidates = results
                 .Select(r => (
@@ -1269,7 +1282,9 @@ public class RecommendationEngine
 
             try
             {
-                var news = await _newsIngest.SaveOrUpdateNewsAsync(
+                var news = await _context.News.Include(n => n.Tag).Include(n => n.DetailNews)
+                    .FirstOrDefaultAsync(n => n.Hyperlink == selected.Url, cancellationToken);
+                news ??= await _newsIngest.SaveOrUpdateNewsAsync(
                     selected.Url,
                     string.IsNullOrWhiteSpace(selected.Snippet) ? selected.Title : selected.Snippet,
                     selected.Title,
@@ -1286,7 +1301,12 @@ public class RecommendationEngine
                 blockedUrls.Add(selected.Url);
                 blockedTitles.Add(NormalizeTitle(selected.Title));
 
-                await EnsureNewsImageAsync(news.IdNews, cancellationToken);
+                // An optional image must not discard an already persisted story.
+                using var imageTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                imageTimeout.CancelAfter(TimeSpan.FromSeconds(5));
+                try { await EnsureNewsImageAsync(news.IdNews, imageTimeout.Token); }
+                catch (OperationCanceledException) { }
+                catch (Exception ex) { _logger?.LogDebug(ex, "Image lookup failed for {NewsId}", news.IdNews); }
 
                 return new PersonalizedRecommendation(
                     await _context.News
@@ -1297,6 +1317,7 @@ public class RecommendationEngine
                     preferenceWeight,
                     isSupplemental);
             }
+            catch (OperationCanceledException) { throw; }
             catch (Exception ex)
             {
                 _logger?.LogWarning(ex, "Could not ingest personalized result for {Preference}", preferenceName);

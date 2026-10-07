@@ -280,6 +280,116 @@ public sealed class OptimizedWorkflowTests : IAsyncLifetime
         Assert.Contains("-site:blocked.test",handler.LastQuery);
     }
 
+    [Fact]
+    public async Task PersonalizedFeedReusesStoredSearchResultsWithoutChangingCachedArticle()
+    {
+        var user = await Register();
+        Assert.True((await Auth.SavePreferencesForUserAsync(user.IdUser, ["Technology", "Science"])).success);
+        var tag = await _db.Tags.SingleAsync(t => t.Name == "Technology");
+        var news = MakeNews(tag, "https://allowed.test/news/technology-update");
+        news.DetailNews!.Keyword = "Technology breakthrough announced";
+        news.DetailNews.FullBodyText = "Existing generated article";
+        _db.News.Add(news);
+        await _db.SaveChangesAsync();
+        var handler = new PersonalizedSearchHandler();
+        var engine = PersonalizedEngine(user.IdUser, handler);
+        var emitted = new List<RecommendationEngine.PersonalizedRecommendation>();
+        var results = await engine.GetPersonalizedRecommendationsAsync(user.IdUser,
+            onRecommendation: item => { emitted.Add(item); return Task.CompletedTask; });
+        Assert.Single(results);
+        Assert.Equal(news.IdNews, results[0].News.IdNews);
+        Assert.Single(emitted);
+        Assert.Equal("AiGenerated", results[0].News.DetailNews!.BodySource);
+        Assert.Equal("Existing generated article", results[0].News.DetailNews!.FullBodyText);
+        Assert.All(handler.Queries, query => Assert.DoesNotContain("different story", query));
+        var firstPages = handler.Queries.GroupBy(query => query.Split("&format=")[0])
+            .Select(group => group.First());
+        Assert.All(firstPages, query => Assert.Contains("pageno=1", query));
+        Assert.Contains(handler.Queries, query => query.StartsWith("?q=Science latest current news&"));
+        Assert.Equal(1, await _db.News.CountAsync());
+    }
+
+    [Fact]
+    public async Task PersonalizedFeedFallsBackAfterSearchTimeoutAndHonorsBlockedSources()
+    {
+        var user = await Register();
+        await Auth.SavePreferencesForUserAsync(user.IdUser, ["Technology"]);
+        await new UserBlockedSourceService(_factory).ReplaceAsync(user.IdUser, ["blocked.test"]);
+        var tag = await _db.Tags.SingleAsync(t => t.Name == "Technology");
+        var allowed = MakeNews(tag, "https://allowed.test/news/cached-technology");
+        _db.News.AddRange(allowed, MakeNews(tag, "https://blocked.test/news/cached-technology"));
+        await _db.SaveChangesAsync();
+        var result = await PersonalizedEngine(user.IdUser, new PersonalizedSearchHandler { Timeout = true })
+            .GetPersonalizedRecommendationsAsync(user.IdUser);
+        Assert.Single(result);
+        Assert.Equal(allowed.IdNews, result[0].News.IdNews);
+    }
+
+    [Fact]
+    public async Task PersonalizedFeedPublishesCompletedStoryBeforeLaterCancellation()
+    {
+        var user = await Register();
+        await Auth.SavePreferencesForUserAsync(user.IdUser, ["Technology", "Science"]);
+        var tag = await _db.Tags.SingleAsync(t => t.Name == "Technology");
+        var news = MakeNews(tag, "https://allowed.test/news/technology-update");
+        _db.News.Add(news);
+        await _db.SaveChangesAsync();
+        using var cancellation = new CancellationTokenSource();
+        var emitted = new List<RecommendationEngine.PersonalizedRecommendation>();
+        var engine = PersonalizedEngine(user.IdUser, new PersonalizedSearchHandler());
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => engine.GetPersonalizedRecommendationsAsync(
+            user.IdUser, cancellation.Token, onRecommendation: item =>
+            {
+                emitted.Add(item);
+                cancellation.Cancel();
+                return Task.CompletedTask;
+            }));
+        Assert.Single(emitted);
+        Assert.Equal(news.IdNews, emitted[0].News.IdNews);
+    }
+
+    [Fact]
+    public async Task PersonalizedFeedKeepsNewStoryWhenOptionalImageSearchTimesOut()
+    {
+        var user = await Register();
+        await Auth.SavePreferencesForUserAsync(user.IdUser, ["Technology"]);
+        var engine = PersonalizedEngine(user.IdUser, new PersonalizedSearchHandler { TimeoutImages = true });
+        var results = await engine.GetPersonalizedRecommendationsAsync(user.IdUser);
+        Assert.Single(results);
+        Assert.Equal("https://allowed.test/news/technology-update", results[0].News.Hyperlink);
+        Assert.Equal(1, await _db.News.CountAsync());
+    }
+
+    private RecommendationEngine PersonalizedEngine(int userId, HttpMessageHandler handler)
+    {
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string,string?>
+        {
+            ["LocalLlm:SearXngUrl"] = "https://search.example.test", ["LocalLlm:Model"] = "test"
+        }).Build();
+        var search = new UserAwareLocalLlmService(new SearchHttpFactory(handler), config,
+            NullLogger<LocalLlmService>.Instance, new UserSessionService(new StorageRuntime(), _factory, _protection), _factory)
+            { SearchUserId = userId };
+        return new RecommendationEngine(_db, search, new NewsIngestService(_db, NullLogger<NewsIngestService>.Instance));
+    }
+
+    private sealed class PersonalizedSearchHandler : HttpMessageHandler
+    {
+        public bool Timeout { get; init; }
+        public bool TimeoutImages { get; init; }
+        public List<string> Queries { get; } = new();
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            if (Timeout || (TimeoutImages && request.RequestUri!.Query.Contains("categories=images")))
+                throw new TaskCanceledException("Simulated HTTP timeout");
+            Queries.Add(Uri.UnescapeDataString(request.RequestUri!.Query));
+            var json = JsonSerializer.Serialize(new { results = new[] {
+                new { title = "Technology breakthrough announced", url = "https://allowed.test/news/technology-update",
+                    content = "Technology research delivers a sufficiently detailed current news update for readers." }
+            }});
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(json) });
+        }
+    }
+
     private sealed class SearchHttpFactory(HttpMessageHandler handler):IHttpClientFactory
     {
         public HttpClient CreateClient(string name)=>new(handler,disposeHandler:false);

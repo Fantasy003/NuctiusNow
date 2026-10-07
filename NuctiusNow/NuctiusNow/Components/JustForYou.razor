@@ -3,7 +3,8 @@
 @using NuctiusNow.Components.User_Related
 @using NuctiusNow.Services
 @inject UserSessionService sessionService
-@inject RecommendationEngine RecommendationEngine
+@implements IDisposable
+@inject IServiceScopeFactory ScopeFactory
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
 
@@ -85,11 +86,15 @@
                 <span class="context-status">AI + SEARXNG</span>
             </div>
 
+            @if (!string.IsNullOrWhiteSpace(_refreshMessage))
+            {
+                <p role="status" class="jfy-updated">@_refreshMessage</p>
+            }
             @if (_isRefreshing && _recommendations.Count == 0)
             {
                 <div class="jfy-state-card">
                     <h2>Building your recommendations…</h2>
-                    <p>The AI is searching one preference at a time and avoiding stories already stored in NuctiusNow.</p>
+                    <p>Searching your interests. Stories will appear as they become available.</p>
                 </div>
             }
             else if (_recommendations.Count == 0)
@@ -181,6 +186,8 @@
 </div>
 
 @code {
+    private readonly CancellationTokenSource _lifetime = new();
+    private string? _refreshMessage;
     private bool _isInitialized;
     private bool _isRefreshing;
     private DateTimeOffset? _lastRefreshAt;
@@ -196,7 +203,7 @@
         if (sessionService.IsAuthenticated && sessionService.UserId.HasValue)
         {
             _preferences.Clear();
-            _preferences.AddRange(await RecommendationEngine.GetUserPreferencesAsync(sessionService.UserId.Value));
+            _preferences.AddRange(await GetPreferencesAsync(sessionService.UserId.Value));
         }
         _isInitialized = true;
         await InvokeAsync(StateHasChanged);
@@ -210,32 +217,46 @@
             return;
 
         _isRefreshing = true;
+        _refreshMessage = null;
         await InvokeAsync(StateHasChanged);
 
         try
         {
             _explorationMode = await RegisterFeedRefreshAsync();
 
-            using var timeoutCts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
-            _recommendations = await RecommendationEngine.GetPersonalizedRecommendationsAsync(
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
+            timeoutCts.CancelAfter(TimeSpan.FromMinutes(5));
+            using var scope = CreateUserScope();
+            var engine = scope.ServiceProvider.GetRequiredService<RecommendationEngine>();
+            var pending = new List<RecommendationEngine.PersonalizedRecommendation>();
+            var completed = await engine.GetPersonalizedRecommendationsAsync(
                 sessionService.UserId.Value,
                 timeoutCts.Token,
-                explorationMode: _explorationMode);
+                explorationMode: _explorationMode,
+                onRecommendation: item => InvokeAsync(() =>
+                {
+                    if (_lifetime.IsCancellationRequested) return;
+                    pending.Add(item);
+                    _recommendations = pending.ToList();
+                    StateHasChanged();
+                }));
+            if (!_lifetime.IsCancellationRequested) _recommendations = completed;
 
             _lastRefreshAt = DateTimeOffset.UtcNow;
         }
         catch (OperationCanceledException)
         {
-            // The UI timeout prevents a hung local model from keeping the circuit busy forever.
+            _refreshMessage = "The search timed out. Any stories already found are shown below. Try refreshing again.";
         }
         catch (Exception ex)
         {
+            _refreshMessage = "Could not complete the search. Check that SearXNG is running and try again.";
             Console.Error.WriteLine($"JustForYou refresh failed: {ex}");
         }
         finally
         {
             _isRefreshing = false;
-            await InvokeAsync(StateHasChanged);
+            if (!_lifetime.IsCancellationRequested) await InvokeAsync(StateHasChanged);
         }
     }
 
@@ -260,11 +281,32 @@
         if (!sessionService.UserId.HasValue || news.IdNews <= 0)
             return;
 
-        await RecommendationEngine.RegisterCategoryClickAsync(
+        using var scope = CreateUserScope();
+        await scope.ServiceProvider.GetRequiredService<RecommendationEngine>().RegisterCategoryClickAsync(
             sessionService.UserId.Value,
             news.IdNews);
 
         Navigation.NavigateTo($"/news-detail/{news.IdNews}");
+    }
+
+    private IServiceScope CreateUserScope()
+    {
+        var scope = ScopeFactory.CreateScope();
+        if (scope.ServiceProvider.GetService<ILocalLlmService>() is UserAwareLocalLlmService search)
+            search.SearchUserId = sessionService.UserId;
+        return scope;
+    }
+
+    private async Task<List<string>> GetPreferencesAsync(int userId)
+    {
+        using var scope = CreateUserScope();
+        return await scope.ServiceProvider.GetRequiredService<RecommendationEngine>().GetUserPreferencesAsync(userId);
+    }
+
+    public void Dispose()
+    {
+        _lifetime.Cancel();
+        _lifetime.Dispose();
     }
 
     private static string GetToneClass(string preference)

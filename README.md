@@ -54,6 +54,10 @@ dotnet run --project NuctiusNow/NuctiusNow --no-launch-profile --urls http://loc
 
 Use your deployed application's HTTPS origin for `Application__PublicBaseUrl` in production. `System.Net.Mail.SmtpClient` supports STARTTLS (usually port 587); it does not support implicit TLS on port 465. Use your provider's STARTTLS endpoint and, when required, an app password or SMTP credential instead of your normal login password. The server log's `Activation email error` identifies missing configuration, authentication, TLS or network failures. Never share passwords or activation tokens from logs.
 
+## Personalized feed
+
+Just For You searches each preference from page one and displays completed cards progressively. Existing articles may be reused without overwriting their generated content; duplicates are excluded within the current feed. A search has a 45-second budget per story, then falls back to cached news for that preference while respecting blocked sources. Optional image lookup has a five-second budget. If the overall refresh times out, cards already found remain visible.
+
 ## Regression tests
 
 The integration suite requires PostgreSQL and an account permitted to create temporary databases:
