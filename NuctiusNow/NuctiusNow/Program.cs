@@ -9,6 +9,11 @@ var builder = WebApplication.CreateBuilder(args);
 
 // 1. SERVICIOS Y ESTADOS
 builder.Services.AddScoped<ThemeState>();
+builder.Services.AddScoped<LanguageState>();
+builder.Services.AddMemoryCache(options => options.SizeLimit = 32 * 1024 * 1024);
+builder.Services.AddSingleton<TranslationCatalog>();
+builder.Services.AddScoped<SiteTranslationService>();
+builder.Services.AddScoped<ITextTranslationBackend>(provider => provider.GetRequiredService<LocalLlmService>());
 builder.Services.AddDataProtection().SetApplicationName("NuctiusNow")
     .PersistKeysToFileSystem(new DirectoryInfo(builder.Configuration["DataProtection:KeysPath"]
         ?? Path.Combine(AppContext.BaseDirectory, "data-protection-keys")));

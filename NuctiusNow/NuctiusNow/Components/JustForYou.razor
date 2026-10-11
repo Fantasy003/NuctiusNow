@@ -120,7 +120,7 @@
                                 <div class="card-media">
                                     @if (hasImage)
                                     {
-                                        <img class="news-overview-image"
+                                        <img data-news-text class="news-overview-image"
                                              src="@news.DetailNews!.ImageUrl"
                                              alt="@(news.DetailNews?.Keyword ?? preference)"
                                              loading="lazy" />
@@ -143,8 +143,8 @@
                                         <span class="category-weight">@GetPreferenceLabel(item)</span>
                                     </div>
 
-                                    <h2 class="news-title">@(news.DetailNews?.Keyword ?? "Untitled story")</h2>
-                                    <p class="news-body">
+                                    <h2 class="news-title" data-news-text>@(news.DetailNews?.Keyword ?? "Untitled story")</h2>
+                                    <p class="news-body" data-news-text>
                                         @(string.IsNullOrWhiteSpace(news.DetailNews?.Context)
                                             ? "Snippet unavailable for this story."
                                             : news.DetailNews.Context)

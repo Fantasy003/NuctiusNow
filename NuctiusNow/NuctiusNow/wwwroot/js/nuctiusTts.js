@@ -1,4 +1,4 @@
-﻿window.nuctiusTts = {
+window.nuctiusTts = {
     _dotNetRef: null,
     _utterance: null,
 
@@ -7,7 +7,7 @@
         return true;
     },
 
-    speak: function (text, rate) {
+    speak: function (text, rate, language) {
         if (!text || !window.speechSynthesis) {
             return false;
         }
@@ -16,6 +16,7 @@
 
         const utterance = new SpeechSynthesisUtterance(text);
 
+        utterance.lang = language || document.documentElement.lang || "en-US";
         utterance.rate = Number(rate) || 1.0;
         utterance.pitch = 1.0;
         utterance.volume = 1.0;

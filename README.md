@@ -31,7 +31,7 @@ Configuration uses standard ASP.NET environment variables with `__` separators:
 
 Use environment settings or user secrets for credential values. Protected sessions expire after 12 hours, or 30 days when Remember Me is selected. Password changes, bans and email changes invalidate existing sessions. Old editable `nuctiusnow_user`/`nuctiusnow_userid` fields no longer authenticate users.
 
-Profile updates normalize supported English/Spanish language values to `en`/`es`. A successful update starts the existing three-hour cooldown. Changing email requires verification of the new address; if SMTP is unavailable, the verification page supports resending once delivery is configured.
+Profile updates normalize all supported language names and codes; legacy English/Spanish values remain accepted. A successful update starts the existing three-hour cooldown. Changing email requires verification of the new address; if SMTP is unavailable, the verification page supports resending once delivery is configured.
 
 ## Activation email setup
 
@@ -53,6 +53,24 @@ dotnet run --project NuctiusNow/NuctiusNow --no-launch-profile --urls http://loc
 ```
 
 Use your deployed application's HTTPS origin for `Application__PublicBaseUrl` in production. `System.Net.Mail.SmtpClient` supports STARTTLS (usually port 587); it does not support implicit TLS on port 465. Use your provider's STARTTLS endpoint and, when required, an app password or SMTP credential instead of your normal login password. The server log's `Activation email error` identifies missing configuration, authentication, TLS or network failures. Never share passwords or activation tokens from logs.
+
+## Website languages
+
+User Settings supports English (`en`), Spanish (`es`), Brazilian Portuguese (`pt`), Russian (`ru`), Simplified Chinese (`zh`), Japanese (`ja`), Hindi (`hi`), Arabic (`ar`), French (`fr`), German (`de`) and Italian (`it`). Choose a language and **Apply changes**. The saved profile language takes effect across the site and is restored at sign-in/reload. Profile saves retain the existing three-hour cooldown. Before sign-in, the browser's last selection or supported browser language is used.
+
+Navigation and common controls have a bundled translation catalog. Remaining interface text, page titles, validation messages, news headlines, summaries, snippets and complete generated articles are translated on demand by the configured LM Studio model. The model must be running and capable of translating the selected languages. No new API keys or external translation provider are required. Source news rows stay unchanged; bounded caches isolate translated text by language and source content. Dynamic news and navigation are translated after rendering, so translation can take time on first use. A localized progress/failure indicator and retry button report unavailable translation rather than silently treating English as success.
+
+Arabic sets the document's right-to-left direction. The assistant is instructed to answer in the selected language. Article playback reads the displayed translation and uses that language's speech locale; availability of voices depends on the browser/OS. Form values, URLs, user-written chatbot messages and brand names are preserved.
+
+Run the standalone Chromium localization checks without a database or model:
+
+```bash
+cd tests/browser
+npm ci
+npm run test:localization
+```
+
+These checks use a mocked translator to verify all language changes, dynamic content, input preservation, stale response protection, failure/retry and playback text. Automated checks verify model requests and cache behavior, not native-speaker translation quality; review the configured model's translations before production use.
 
 ## Personalized feed
 

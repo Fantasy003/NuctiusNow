@@ -1,7 +1,8 @@
 {
   "private": true,
   "scripts": {
-    "test": "node smoke.cjs"
+    "test": "node smoke.cjs",
+    "test:localization": "node localization.cjs"
   },
   "devDependencies": {
     "playwright": "1.63.0"

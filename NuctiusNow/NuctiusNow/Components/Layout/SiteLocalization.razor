@@ -1,0 +1,57 @@
+@using NuctiusNow.Services
+@inject LanguageState Language
+@inject TranslationCatalog Catalog
+@inject SiteTranslationService Translation
+@inject UserSessionService Session
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+@code {
+    private DotNetObjectReference<SiteLocalization>? _reference;
+    private bool _started;
+    private readonly CancellationTokenSource _lifetime = new();
+
+    protected override void OnInitialized() => Language.Changed += LanguageChanged;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        var saved = await JS.InvokeAsync<string?>("localStorage.getItem", "nuctiusnow_language");
+        Language.Set(saved ?? await JS.InvokeAsync<string>("nuctiusLocalization.browserLanguage"));
+        // The authenticated profile is authoritative after reload/sign-in.
+        await Session.InitializeAsync();
+        _reference = DotNetObjectReference.Create(this);
+        await JS.InvokeVoidAsync("nuctiusLocalization.start", _reference, Language.Current, Catalog.For(Language.Current.Code));
+        _started = true;
+    }
+
+    private async void LanguageChanged()
+    {
+        if (!_started || _lifetime.IsCancellationRequested) return;
+        try
+        {
+            await InvokeAsync(async () => await JS.InvokeVoidAsync("nuctiusLocalization.setLanguage",
+                Language.Current, Catalog.For(Language.Current.Code)));
+        }
+        catch (JSDisconnectedException) { }
+        catch (ObjectDisposedException) { }
+    }
+
+    [JSInvokable]
+    public async Task<string[]> TranslateBatch(TranslationText[] texts, string language)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
+        timeout.CancelAfter(TimeSpan.FromMinutes(2));
+        return await Translation.TranslateAsync(texts, language, timeout.Token);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        Language.Changed -= LanguageChanged;
+        _lifetime.Cancel();
+        try { if (_started) await JS.InvokeVoidAsync("nuctiusLocalization.stop"); }
+        catch (JSDisconnectedException) { }
+        _reference?.Dispose();
+        _lifetime.Dispose();
+    }
+}

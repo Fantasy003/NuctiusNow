@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.JSInterop;
 using NuctiusNow.Data;
+using NuctiusNow.Services;
 
 namespace NuctiusNow.Components.User_Related;
 
@@ -11,6 +12,7 @@ public class UserSessionService
 {
     private const string SessionKey = "nuctiusnow_session";
     private readonly IJSRuntime _jsRuntime;
+    private readonly LanguageState? _language;
     private readonly IDbContextFactory<ApplicationDbContext> _dbFactory;
     private readonly ITimeLimitedDataProtector _protector;
 
@@ -20,9 +22,10 @@ public class UserSessionService
     public bool IsPremium { get; private set; }
     public bool RememberMe { get; private set; }
 
-    public UserSessionService(IJSRuntime jsRuntime, IDbContextFactory<ApplicationDbContext> dbFactory, IDataProtectionProvider protection)
+    public UserSessionService(IJSRuntime jsRuntime, IDbContextFactory<ApplicationDbContext> dbFactory, IDataProtectionProvider protection, LanguageState? language = null)
     {
         _jsRuntime = jsRuntime;
+        _language = language;
         _dbFactory = dbFactory;
         _protector = protection.CreateProtector("NuctiusNow.UserSession.v1").ToTimeLimitedDataProtector();
     }
@@ -93,6 +96,7 @@ public class UserSessionService
 
     private void SetState(User user)
     {
+        _language?.Set(user.Language);
         IsAuthenticated = true;
         UserId = user.IdUser;
         Username = user.Username;

@@ -96,7 +96,7 @@
                     <div class="result-image">
                         @if (!string.IsNullOrWhiteSpace(article.ImageUrl))
                         {
-                            <img src="@article.ImageUrl" alt="@(article.Title)" loading="lazy" />
+                            <img data-news-text src="@article.ImageUrl" alt="@(article.Title)" loading="lazy" />
                         }
                         else
                         {
@@ -115,8 +115,8 @@
                                 <span class="result-cached-badge">CACHED</span>
                             }
                         </div>
-                        <h3 class="result-title">@article.Title</h3>
-                        <p class="result-snippet">@article.Snippet</p>
+                        <h3 class="result-title" data-news-text>@article.Title</h3>
+                        <p class="result-snippet" data-news-text>@article.Snippet</p>
                         <div class="result-footer">
                             <span class="result-date">@article.PublishedDate.ToLocalTime().ToString("MMM d, yyyy")</span>
                             <a href="@article.Url"

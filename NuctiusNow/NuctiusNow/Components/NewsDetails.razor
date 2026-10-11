@@ -1,3 +1,4 @@
+@inject NuctiusNow.Services.LanguageState Language
 @page "/news-detail/{Id:int}"
 @implements IAsyncDisposable
 
@@ -46,7 +47,7 @@ else
                 <span class="news-id">@((currentNews.DetailNews?.NewsDate ?? currentNews.CapturedDate).ToLocalTime().ToString("MMM d, yyyy - HH:mm"))</span>
             </div>
 
-            <h1 class="detail-title">@(currentNews.DetailNews?.Keyword ?? "No Title Available")</h1>
+            <h1 class="detail-title" data-news-text>@(currentNews.DetailNews?.Keyword ?? "No Title Available")</h1>
 
             <div class="detail-source-block">
                 <span class="detail-section-label">SOURCE</span>
@@ -71,7 +72,7 @@ else
                         <div class="detail-section-label">AI SUMMARY</div>
                         @if (!string.IsNullOrWhiteSpace(currentNews.DetailNews?.AiSummary))
                         {
-                            <p>@currentNews.DetailNews.AiSummary</p>
+                            <p data-news-text>@currentNews.DetailNews.AiSummary</p>
                         }
                         else
                         {
@@ -163,7 +164,7 @@ else
                         else if (currentNews.DetailNews?.BodySource == "AiGenerated" &&
                                  !string.IsNullOrWhiteSpace(currentNews.DetailNews.FullBodyText))
                         {
-                            <div class="full-article-body">@currentNews.DetailNews.FullBodyText</div>
+                            <div class="full-article-body" data-news-text>@currentNews.DetailNews.FullBodyText</div>
                         }
                         else if (!string.IsNullOrWhiteSpace(fullBodyError))
                         {
@@ -675,7 +676,7 @@ else
 
     private bool ttsUnlocked;
     private bool ttsPlaying;
-    private string ttsLanguage = "en-US";
+    private string ttsLanguage => Language.Current.Culture;
     private double ttsRate = 1.0;
 
     private DotNetObjectReference<NewsDetails>? ttsDotNetRef;
@@ -689,9 +690,9 @@ else
 
         await JS.InvokeVoidAsync(
             "nuctiusTts.speak",
-            article,
-            ttsLanguage,
-            ttsRate);
+            await JS.InvokeAsync<string>("nuctiusLocalization.articleText"),
+            ttsRate,
+            ttsLanguage);
     }
 
     private async Task PauseArticle()
@@ -714,19 +715,9 @@ else
         if (currentNews?.DetailNews == null)
             return;
 
-        var title = currentNews.DetailNews.Keyword ?? string.Empty;
-        var summary = currentNews.DetailNews.AiSummary ?? string.Empty;
-        var article = currentNews.DetailNews.FullBodyText ?? string.Empty;
-
-        var text = string.Join(
-            "\n\n",
-            new[]
-            {
-            title,
-            summary,
-            article
-            }
-            .Where(x => !string.IsNullOrWhiteSpace(x)));
+        string text;
+        try { text = await JS.InvokeAsync<string>("nuctiusLocalization.articleText"); }
+        catch (JSException) { return; }
 
         if (string.IsNullOrWhiteSpace(text))
             return;
@@ -745,7 +736,7 @@ else
             "nuctiusTts.speak",
             text,
             ttsRate,
-            "en-US");
+            Language.Current.Culture);
 
         StateHasChanged();
     }

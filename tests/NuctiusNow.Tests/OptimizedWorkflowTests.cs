@@ -123,6 +123,15 @@ public sealed class OptimizedWorkflowTests : IAsyncLifetime
     [InlineData("Spanish", "es")]
     [InlineData("2", "es")]
     [InlineData("English", "en")]
+    [InlineData("Portuguese", "pt")]
+    [InlineData("Russian", "ru")]
+    [InlineData("Chinese", "zh")]
+    [InlineData("Japanese", "ja")]
+    [InlineData("Hindi", "hi")]
+    [InlineData("Arabic", "ar")]
+    [InlineData("French", "fr")]
+    [InlineData("German", "de")]
+    [InlineData("Italian", "it")]
     public async Task ProfileLanguageAndBirthdayPersist(string inputLanguage, string expected)
     {
         var user = await Register();

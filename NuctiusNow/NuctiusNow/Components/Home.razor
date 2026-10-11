@@ -46,7 +46,7 @@
                     <div class="category-card-media">
                         @if (hasImage && hottestNews != null)
                         {
-                            <img class="category-card-image"
+                            <img data-news-text class="category-card-image"
                                  src="@hottestNews.DetailNews!.ImageUrl"
                                  alt="@(hottestNews.DetailNews?.Keyword ?? cat.Name)"
                                  loading="lazy" />
@@ -82,11 +82,11 @@
                                 }
                             </div>
 
-                            <h2 class="category-title">
+                            <h2 class="category-title" data-news-text>
                                 @(hottestNews.DetailNews?.Keyword ?? "Untitled story")
                             </h2>
 
-                            <p class="news-summary">
+                            <p class="news-summary" data-news-text>
                                 @(string.IsNullOrWhiteSpace(hottestNews.DetailNews?.Context)
                                     ? "Snippet unavailable for this story."
                                     : hottestNews.DetailNews.Context)
@@ -104,8 +104,8 @@
                             <div class="category-card-topline">
                                 <span class="ai-badge muted">NO RESULT</span>
                             </div>
-                            <h2 class="category-title">No recent news</h2>
-                            <p class="news-summary">We couldn't find an article for this category right now.</p>
+                            <h2 class="category-title" data-news-text>No recent news</h2>
+                            <p class="news-summary" data-news-text>We couldn't find an article for this category right now.</p>
                         }
                     </div>
                 </article>

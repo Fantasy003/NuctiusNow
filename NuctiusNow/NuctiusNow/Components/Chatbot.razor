@@ -1,3 +1,4 @@
+@inject NuctiusNow.Services.LanguageState Language
 @using NuctiusNow.Services
 @using Microsoft.AspNetCore.Components.Web
 @inject ILocalLlmService LlmService
@@ -161,6 +162,7 @@
                 $"Current page: {CurrentPageLabel}.\n" +
                 $"Current route: {Navigation.ToBaseRelativePath(Navigation.Uri)}.\n\n" +
                 "Answer naturally and clearly.\n" +
+                $"Always respond in {Language.Current.Name} ({Language.Current.Culture}).\n" +
                 "Never invent facts.\n" +
                 "Explain news topics only from information you can support.\n" +
                 "Do not claim to have searched the web unless search results were actually supplied by the application.";

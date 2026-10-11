@@ -7,6 +7,7 @@ using System.Net.Http.Json;
 using System.Text.Json.Serialization;
 using NuctiusNow;
 using NuctiusNow.Data;
+using NuctiusNow.Services;
 using NuctiusNow.Components.User_Related;
 
 namespace NuctiusNow.Components.User_Related;
@@ -388,12 +389,8 @@ public class AuthService
 
         if (!string.IsNullOrEmpty(newLanguage))
         {
-            var normalizedLanguage =
-                newLanguage.Equals("Spanish", StringComparison.OrdinalIgnoreCase) ||
-                newLanguage.Equals("es", StringComparison.OrdinalIgnoreCase) ||
-                newLanguage == "2"
-                    ? "es"
-                    : "en";
+            var normalizedLanguage = LanguageState.Normalize(newLanguage);
+            if (normalizedLanguage == null) return false;
 
             userToUpdate.Language = normalizedLanguage;
         }
@@ -416,12 +413,7 @@ public class AuthService
         }
     }
 
-    private static string? NormalizeLanguage(string? language) => language?.Trim().ToLowerInvariant() switch
-    {
-        "en" or "english" or "1" => "en",
-        "es" or "spanish" or "2" => "es",
-        _ => null
-    };
+    private static string? NormalizeLanguage(string? language) => LanguageState.Normalize(language);
 
     private static bool ValidPassword(string password) =>
         !string.IsNullOrWhiteSpace(password) && password.Length >= 8 && Encoding.UTF8.GetByteCount(password) <= 72;

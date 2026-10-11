@@ -296,3 +296,15 @@ html.theme-retro,
 html.theme-office {
     color-scheme: dark;
 }
+
+/* International text and Arabic reading direction. */
+html[dir="rtl"] .app-shell { direction: rtl; }
+html[dir="rtl"] .page-body, html[dir="rtl"] .full-article-body,
+html[dir="rtl"] .summary-section, html[dir="rtl"] .detail-title { text-align: start; }
+.full-article-body, .news-title, .news-summary, .news-body, .detail-title { overflow-wrap: anywhere; }
+.localization-status { position: fixed; inset-inline-end: 1rem; bottom: 5rem; z-index: 2000; display: flex; gap: .75rem; align-items: center; max-width: min(90vw, 480px); padding: .8rem 1rem; border: 1px solid rgba(230,57,70,.45); border-radius: 10px; background: #19191c; color: #fff; box-shadow: 0 8px 24px #0005; font-size: .85rem; }
+.localization-status[hidden], .localization-status button[hidden] { display: none; }
+.localization-status button { background: #e63946; color: #fff; border: 0; border-radius: 6px; padding: .5rem .75rem; cursor: pointer; }
+html[dir="rtl"] .category-card-link, html[dir="rtl"] .news-box-link { text-align: start; }
+html[dir="rtl"] .category-tag, html[dir="rtl"] .category-tag-pill { left: auto; right: .8rem; }
+html[dir="rtl"] .full-article-body { border-left: 0; border-right: 4px solid var(--accent); }

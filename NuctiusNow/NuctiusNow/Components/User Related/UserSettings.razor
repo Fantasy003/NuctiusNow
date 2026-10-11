@@ -1,3 +1,4 @@
+@inject NuctiusNow.Services.LanguageState Language
 @using NuctiusNow.Services
 @page "/user-settings"
 @rendermode InteractiveServer
@@ -90,8 +91,10 @@ else
                     <label class="settings-field">
                         <span>Language</span>
                         <select @bind="userModel.Language" disabled="@profileUpdateLocked">
-                            <option value="English">English</option>
-                            <option value="Spanish">Spanish</option>
+                            @foreach (var language in NuctiusNow.Services.LanguageState.Supported)
+                            {
+                                <option value="@language.Code" translate="no">@language.NativeName</option>
+                            }
                         </select>
                     </label>
                 </div>
@@ -303,10 +306,7 @@ else
             Email = user.Email,
             Username = user.Username,
             Birthday = user.Birthday == default ? DateTime.Today : user.Birthday.Date,
-            Language = user.Language.Equals("es", StringComparison.OrdinalIgnoreCase) ||
-                        user.Language.Equals("Spanish", StringComparison.OrdinalIgnoreCase)
-                ? "Spanish"
-                : "English",
+            Language = NuctiusNow.Services.LanguageState.Normalize(user.Language) ?? "en",
             Password = string.Empty,
             ConfirmPassword = string.Empty,
             Preferences = await authService.GetUserPreferencesAsync(sessionService.UserId.Value)
@@ -511,6 +511,7 @@ else
 
             if (result.Success)
             {
+                Language.Set(userModel.Language);
                 if (result.RequiresEmailVerification)
                 {
                     var userId = sessionService.UserId.Value;
@@ -560,7 +561,7 @@ else
         public string Password { get; set; } = string.Empty;
         public string ConfirmPassword { get; set; } = string.Empty;
         public DateTime Birthday { get; set; } = DateTime.Today;
-        public string Language { get; set; } = "English";
+        public string Language { get; set; } = "en";
         public List<string> Preferences { get; set; } = new();
     }
 }
