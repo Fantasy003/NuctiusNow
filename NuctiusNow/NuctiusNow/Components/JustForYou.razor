@@ -194,7 +194,8 @@
     private readonly List<string> _preferences = new();
     private List<RecommendationEngine.PersonalizedRecommendation> _recommendations = new();
     private bool _explorationMode;
-    private const string FeedRefreshStorageKey = "nuctiusnow_feed_refresh_count";
+    private string FeedRefreshStorageKey => $"nuctiusnow_feed_refresh_count:{sessionService.UserId}";
+    private string PreviousFeedStorageKey => $"nuctiusnow_previous_feed:{sessionService.UserId}";
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -228,21 +229,38 @@
             timeoutCts.CancelAfter(TimeSpan.FromMinutes(5));
             using var scope = CreateUserScope();
             var engine = scope.ServiceProvider.GetRequiredService<RecommendationEngine>();
+            var previousIds = await ReadPreviousFeedAsync();
+            if (_recommendations.Count == 0 && previousIds.Length > 0)
+            {
+                _recommendations = await engine.GetCachedFeedAsync(sessionService.UserId.Value, previousIds, timeoutCts.Token);
+                await InvokeAsync(StateHasChanged);
+            }
             var pending = new List<RecommendationEngine.PersonalizedRecommendation>();
             var completed = await engine.GetPersonalizedRecommendationsAsync(
                 sessionService.UserId.Value,
                 timeoutCts.Token,
                 explorationMode: _explorationMode,
-                onRecommendation: item => InvokeAsync(() =>
+                onRecommendation: item => InvokeAsync(async () =>
                 {
                     if (_lifetime.IsCancellationRequested) return;
                     pending.Add(item);
                     _recommendations = pending.ToList();
                     StateHasChanged();
-                }));
-            if (!_lifetime.IsCancellationRequested) _recommendations = completed;
-
-            _lastRefreshAt = DateTimeOffset.UtcNow;
+                    await StorePreviousFeedAsync();
+                }),
+                excludedNewsIds: previousIds);
+            if (!_lifetime.IsCancellationRequested && completed.Count > 0)
+            {
+                _recommendations = completed;
+                await StorePreviousFeedAsync();
+                _lastRefreshAt = DateTimeOffset.UtcNow;
+            }
+            else if (!_lifetime.IsCancellationRequested)
+            {
+                _refreshMessage = _recommendations.Count > 0
+                    ? "No different stories were found right now. Your previous recommendations are still shown. Try again later."
+                    : "No recommendations were found right now. Try again later.";
+            }
         }
         catch (OperationCanceledException)
         {
@@ -258,6 +276,28 @@
             _isRefreshing = false;
             if (!_lifetime.IsCancellationRequested) await InvokeAsync(StateHasChanged);
         }
+    }
+
+    private async Task<int[]> ReadPreviousFeedAsync()
+    {
+        if (_recommendations.Count > 0) return _recommendations.Select(x => x.News.IdNews).Distinct().ToArray();
+        try
+        {
+            var raw = await JS.InvokeAsync<string?>("sessionStorage.getItem", PreviousFeedStorageKey);
+            return string.IsNullOrWhiteSpace(raw) ? [] :
+                (System.Text.Json.JsonSerializer.Deserialize<int[]>(raw) ?? []).Where(id => id > 0).Distinct().Take(100).ToArray();
+        }
+        catch { return []; }
+    }
+
+    private async Task StorePreviousFeedAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("sessionStorage.setItem", PreviousFeedStorageKey,
+                System.Text.Json.JsonSerializer.Serialize(_recommendations.Select(x => x.News.IdNews).Distinct().Take(100)));
+        }
+        catch (JSException) { /* Rotation still works in memory when browser storage is unavailable. */ }
     }
 
     private async Task<bool> RegisterFeedRefreshAsync()

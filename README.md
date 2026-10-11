@@ -74,7 +74,7 @@ These checks use a mocked translator to verify all language changes, dynamic con
 
 ## Personalized feed
 
-Just For You searches each preference from page one and displays completed cards progressively. Existing articles may be reused without overwriting their generated content; duplicates are excluded within the current feed. A search has a 45-second budget per story, then falls back to cached news for that preference while respecting blocked sources. Optional image lookup has a five-second budget. If the overall refresh times out, cards already found remain visible.
+Just For You searches each preference from page one and displays completed cards progressively. Existing articles may be reused without overwriting their generated content; duplicates are excluded within the current feed and articles from the previous displayed feed are excluded on refresh. The previous feed is remembered per user in browser session storage, including page reloads. If no alternative is found, the existing cards remain visible with a message. Exploration refreshes also respect these exclusions and blocked sources. A search has a 45-second budget per story, then falls back to cached news for that preference while respecting blocked sources. Optional image lookup has a five-second budget. If the overall refresh times out, cards already found remain visible.
 
 ## Regression tests
 

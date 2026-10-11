@@ -995,10 +995,11 @@ public class RecommendationEngine
         int userId,
         CancellationToken cancellationToken = default,
         bool explorationMode = false,
-        Func<PersonalizedRecommendation, Task>? onRecommendation = null)
+        Func<PersonalizedRecommendation, Task>? onRecommendation = null,
+        IReadOnlyCollection<int>? excludedNewsIds = null)
     {
         if (explorationMode)
-            return await GetExplorationRecommendationsAsync(userId, cancellationToken);
+            return await GetExplorationRecommendationsAsync(userId, cancellationToken, excludedNewsIds);
 
         var output = new List<PersonalizedRecommendation>();
         if (_llmService == null || _newsIngest == null)
@@ -1032,8 +1033,11 @@ public class RecommendationEngine
 
         var personalizationContext = await BuildUserPersonalizationContextAsync(userId, cancellationToken);
 
-        // Deduplicate this feed, not the entire shared news archive.
-        var blockedUrls = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // Exclude the previous displayed feed as well as duplicates in this refresh.
+        var excluded = excludedNewsIds?.Distinct().Take(100).ToArray() ?? [];
+        var previousUrls = await _context.News.AsNoTracking().Where(n => excluded.Contains(n.IdNews))
+            .Select(n => n.Hyperlink).ToListAsync(cancellationToken);
+        var blockedUrls = previousUrls.Select(NormalizeUrl).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var blockedTitles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         async Task<PersonalizedRecommendation?> FindStoryAsync(
@@ -1126,49 +1130,31 @@ public class RecommendationEngine
         int Weight,
         bool IsSupplemental);
 
-    private async Task<List<PersonalizedRecommendation>> GetExplorationRecommendationsAsync(
-        int userId,
-        CancellationToken cancellationToken)
+    public async Task<List<PersonalizedRecommendation>> GetCachedFeedAsync(
+        int userId, IReadOnlyCollection<int> newsIds, CancellationToken cancellationToken = default)
     {
-        var output = new List<PersonalizedRecommendation>();
+        var ids = newsIds.Distinct().Take(100).ToArray();
+        var blocked = await _context.UserBlockedSources.AsNoTracking().Where(s => s.IdUser == userId)
+            .Select(s => s.SourceDomain).ToListAsync(cancellationToken);
+        var news = await _context.News.AsNoTracking().Include(n => n.Tag).Include(n => n.DetailNews)
+            .Where(n => ids.Contains(n.IdNews) && n.DetailNews != null).ToListAsync(cancellationToken);
+        return news.Where(n => !UserBlockedSourceService.IsBlocked(n.Hyperlink, blocked))
+            .OrderBy(n => Array.IndexOf(ids, n.IdNews))
+            .Select(n => new PersonalizedRecommendation(n, n.Tag?.Name ?? "News", 0, false)).ToList();
+    }
 
-        var unseen = await _context.News
-            .AsNoTracking()
-            .Include(n => n.Tag)
-            .Include(n => n.DetailNews)
-            .Where(n => n.DetailNews != null &&
-                        !_context.UserNews.Any(un =>
-                            un.IdUser == userId &&
-                            un.IdNews == n.IdNews &&
-                            un.Seen))
-            .OrderBy(_ => EF.Functions.Random())
-            .Take(4)
-            .ToListAsync(cancellationToken);
-
-        if (unseen.Count < 4)
-        {
-            var ids = unseen.Select(x => x.IdNews).ToHashSet();
-            var fallback = await _context.News
-                .AsNoTracking()
-                .Include(n => n.Tag)
-                .Include(n => n.DetailNews)
-                .Where(n => n.DetailNews != null && !ids.Contains(n.IdNews))
-                .OrderBy(_ => EF.Functions.Random())
-                .Take(4 - unseen.Count)
-                .ToListAsync(cancellationToken);
-            unseen.AddRange(fallback);
-        }
-
-        foreach (var news in unseen)
-        {
-            output.Add(new PersonalizedRecommendation(
-                news,
-                "Exploration",
-                0,
-                true));
-        }
-
-        return output;
+    private async Task<List<PersonalizedRecommendation>> GetExplorationRecommendationsAsync(
+        int userId, CancellationToken cancellationToken, IReadOnlyCollection<int>? excludedNewsIds = null)
+    {
+        var excluded = excludedNewsIds?.Distinct().Take(100).ToArray() ?? [];
+        var blocked = await _context.UserBlockedSources.AsNoTracking().Where(s => s.IdUser == userId)
+            .Select(s => s.SourceDomain).ToListAsync(cancellationToken);
+        var candidates = await _context.News.AsNoTracking().Include(n => n.Tag).Include(n => n.DetailNews)
+            .Where(n => n.DetailNews != null && !excluded.Contains(n.IdNews))
+            .OrderBy(n => _context.UserNews.Any(v => v.IdUser == userId && v.IdNews == n.IdNews && v.Seen))
+            .ThenBy(_ => EF.Functions.Random()).Take(100).ToListAsync(cancellationToken);
+        return candidates.Where(n => !UserBlockedSourceService.IsBlocked(n.Hyperlink, blocked)).Take(4)
+            .Select(n => new PersonalizedRecommendation(n, "Exploration", 0, true)).ToList();
     }
 
     private async Task<PersonalizedRecommendation?> SearchPreferenceStoryAsync(
@@ -1243,7 +1229,7 @@ public class RecommendationEngine
 
             var results = await _llmService.SearchNewsAsync(
                 searchQuery,
-                maxResults: 8,
+                maxResults: 20,
                 cancellationToken: cancellationToken,
                 startingPage: 1);
 

@@ -369,6 +369,96 @@ public sealed class OptimizedWorkflowTests : IAsyncLifetime
         Assert.Equal(1, await _db.News.CountAsync());
     }
 
+    [Fact]
+    public async Task PersonalizedRefreshRotatesSearchResultsAndCanCycleAfterAlternatives()
+    {
+        var user = await Register();
+        await Auth.SavePreferencesForUserAsync(user.IdUser, ["Technology"]);
+        var tag = await _db.Tags.SingleAsync(t => t.Name == "Technology");
+        var stories = Enumerable.Range(0, 8).Select(i =>
+        {
+            var news = MakeNews(tag, $"https://allowed.test/news/technology-story-{i}");
+            news.DetailNews!.Keyword = $"Technology breakthrough number {i}";
+            return news;
+        }).ToArray();
+        _db.News.AddRange(stories);
+        await _db.SaveChangesAsync();
+        var engine = PersonalizedEngine(user.IdUser, new RotationSearchHandler(stories));
+        var first = await engine.GetPersonalizedRecommendationsAsync(user.IdUser);
+        var second = await engine.GetPersonalizedRecommendationsAsync(user.IdUser,
+            excludedNewsIds: first.Select(x => x.News.IdNews).ToArray());
+        Assert.Equal(4, first.Count);
+        Assert.Equal(4, second.Count);
+        Assert.Empty(first.Select(x => x.News.IdNews).Intersect(second.Select(x => x.News.IdNews)));
+        var third = await engine.GetPersonalizedRecommendationsAsync(user.IdUser,
+            excludedNewsIds: second.Select(x => x.News.IdNews).ToArray());
+        Assert.True(first.Select(x => x.News.IdNews).ToHashSet().SetEquals(third.Select(x => x.News.IdNews)));
+        Assert.Equal(8, await _db.News.CountAsync());
+    }
+
+    [Fact]
+    public async Task PersonalizedRefreshRotatesCachedFallbackWhenSearchTimesOut()
+    {
+        var user = await Register();
+        await Auth.SavePreferencesForUserAsync(user.IdUser, ["Technology"]);
+        var tag = await _db.Tags.SingleAsync(t => t.Name == "Technology");
+        _db.News.AddRange(Enumerable.Range(0, 5).Select(i => MakeNews(tag, $"https://allowed.test/news/cached-story-{i}")));
+        await _db.SaveChangesAsync();
+        var engine = PersonalizedEngine(user.IdUser, new PersonalizedSearchHandler { Timeout = true });
+        var first = await engine.GetPersonalizedRecommendationsAsync(user.IdUser);
+        var next = await engine.GetPersonalizedRecommendationsAsync(user.IdUser,
+            excludedNewsIds: first.Select(x => x.News.IdNews).ToArray());
+        Assert.Equal(4, first.Count);
+        Assert.Single(next);
+        Assert.DoesNotContain(next[0].News.IdNews, first.Select(x => x.News.IdNews));
+    }
+
+    [Fact]
+    public async Task PersonalizedRefreshReportsNoAlternativeAndCanRestorePreviousFeed()
+    {
+        var user = await Register();
+        await Auth.SavePreferencesForUserAsync(user.IdUser, ["Technology"]);
+        var tag = await _db.Tags.SingleAsync(t => t.Name == "Technology");
+        var news = MakeNews(tag, "https://allowed.test/news/technology-update");
+        _db.News.Add(news);
+        await _db.SaveChangesAsync();
+        var engine = PersonalizedEngine(user.IdUser, new PersonalizedSearchHandler());
+        var next = await engine.GetPersonalizedRecommendationsAsync(user.IdUser, excludedNewsIds: [news.IdNews]);
+        Assert.Empty(next);
+        Assert.Equal(news.IdNews, Assert.Single(await engine.GetCachedFeedAsync(user.IdUser, [news.IdNews])).News.IdNews);
+    }
+
+    [Fact]
+    public async Task PersonalizedExplorationExcludesPreviousFeedAndBlockedSources()
+    {
+        var user = await Register();
+        await new UserBlockedSourceService(_factory).ReplaceAsync(user.IdUser, ["blocked.test"]);
+        var tag = new Tag { Name = "Technology" };
+        var previous = MakeNews(tag, "https://allowed.test/news/previous");
+        var blocked = MakeNews(tag, "https://blocked.test/news/article");
+        var alternative = MakeNews(tag, "https://allowed.test/news/alternative");
+        _db.News.AddRange(previous, blocked, alternative);
+        await _db.SaveChangesAsync();
+        var engine = PersonalizedEngine(user.IdUser, new PersonalizedSearchHandler());
+        var next = await engine.GetPersonalizedRecommendationsAsync(user.IdUser, explorationMode: true,
+            excludedNewsIds: [previous.IdNews]);
+        Assert.Equal(alternative.IdNews, Assert.Single(next).News.IdNews);
+        Assert.Equal(previous.IdNews, Assert.Single(await engine.GetCachedFeedAsync(user.IdUser,
+            [previous.IdNews, blocked.IdNews])).News.IdNews);
+    }
+
+    private sealed class RotationSearchHandler(News[] stories) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var json = JsonSerializer.Serialize(new { results = stories.Select(n => new {
+                title = n.DetailNews!.Keyword, url = n.Hyperlink,
+                content = "Technology research delivers a sufficiently detailed current news update for readers."
+            }) });
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(json) });
+        }
+    }
+
     private RecommendationEngine PersonalizedEngine(int userId, HttpMessageHandler handler)
     {
         var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string,string?>
