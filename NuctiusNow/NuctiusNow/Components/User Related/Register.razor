@@ -18,7 +18,7 @@
         </div>
 
         <div class="register-body">
-            @if (!string.IsNullOrEmpty(errorMessage))
+            @if (!string.IsNullOrEmpty(errorMessage) && !showPreferences)
             {
                 <div class="error-alert" role="alert">
                     <span class="error-icon">⚠️</span>
@@ -215,8 +215,8 @@
             }
             catch (Exception emailEx)
             {
-                errorMessage = "Your account was created, but we couldn't send the activation email. You can save your preferences and request another email on the next page.";
-                Console.WriteLine($"Activation email error: {emailEx.Message}");
+                errorMessage = $"Your account was created, but the activation email could not be sent: {emailEx.Message}";
+                Console.Error.WriteLine($"Activation email error: {emailEx}");
             }
 
             showPreferences = true;

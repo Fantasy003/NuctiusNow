@@ -43,7 +43,7 @@ public sealed class EmailVerificationService
         var baseUrl = (_configuration["Application:PublicBaseUrl"] ?? string.Empty).TrimEnd('/');
         if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out var publicUri) ||
             (publicUri.Scheme != Uri.UriSchemeHttp && publicUri.Scheme != Uri.UriSchemeHttps))
-            throw new InvalidOperationException("Application:PublicBaseUrl is not configured with an HTTP(S) URL.");
+            throw new InvalidOperationException("Application:PublicBaseUrl is missing or invalid. Set it to the URL where this app is running, for example http://localhost:5217, then restart the app.");
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
 
         var bytes = RandomNumberGenerator.GetBytes(32);

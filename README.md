@@ -52,6 +52,8 @@ $env:Smtp__Username = "<SMTP username>"
 dotnet run --project NuctiusNow/NuctiusNow --no-launch-profile --urls http://localhost:5217
 ```
 
+`Application__PublicBaseUrl` is required even when SMTP credentials are correct because it is embedded in the activation link before the SMTP send begins. It must match the URL/port used to open the app. If registration creates the account but reports that delivery failed, read the detailed message on the preferences screen and correct that setting before using **Resend**.
+
 For VSCode F5, put the same non-secret settings in `.vscode/launch.json` under the active profile's `env` section, and put the password in a user secret or hosting environment variable. Restart the debugging session after changing them. A successful send logs the SMTP host and port, never the password.
 
 ## Cloudflare Turnstile
