@@ -70,7 +70,9 @@
     {
         var path = new Uri(uri).AbsolutePath.Trim('/');
         return path.Equals("login", StringComparison.OrdinalIgnoreCase) ||
-               path.Equals("register", StringComparison.OrdinalIgnoreCase);
+               path.Equals("register", StringComparison.OrdinalIgnoreCase) ||
+               path.Equals("email-verification-pending", StringComparison.OrdinalIgnoreCase) ||
+               path.StartsWith("activate-account/", StringComparison.OrdinalIgnoreCase);
     }
 
     public void Dispose()
