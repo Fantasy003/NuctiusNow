@@ -53,13 +53,13 @@ const {chromium} = require('playwright');
   await page.locator('.settings-actions-bar .settings-secondary-button').click();await page.waitForURL('**/login');
   assert.equal(await page.evaluate(()=>localStorage.getItem('nuctiusnow_session')),null);
   console.log('PASS: birthday/language, three-hour cooldown, document theme and logout');
-  await page.goto(base+'/register');await page.locator('#register-recaptcha-container').waitFor({state:'attached'});
+  await page.goto(base+'/register');await page.locator('#register-turnstile-container').waitFor({state:'attached'});
   await page.evaluate(async()=>{
-   let next=0;window.grecaptcha={render:()=>next++,getResponse:id=>'token-'+id,reset:()=>{}};
+   let next=0;window.turnstile={render:()=>next++,getResponse:id=>'token-'+id,reset:()=>{}};
    const a=document.createElement('div');a.id='captcha-test';document.body.append(a);
-   if(!await renderRecaptchaCheckbox('captcha-test','test-site'))throw Error('First widget missing');
+   if(!await renderTurnstile('captcha-test','test-site'))throw Error('First widget missing');
    a.remove();const b=document.createElement('div');b.id='captcha-test';document.body.append(b);
-   if(!await renderRecaptchaCheckbox('captcha-test','test-site') || getRecaptchaToken()!=='token-1')throw Error('Stale CAPTCHA widget');
+   if(!await renderTurnstile('captcha-test','test-site') || getTurnstileToken()!=='token-1')throw Error('Stale Turnstile widget');
   });
   console.log('PASS: CAPTCHA remounting (Google challenge mocked)');
   assert.deepEqual(errors,[]);

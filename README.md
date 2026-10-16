@@ -24,7 +24,7 @@ Configuration uses standard ASP.NET environment variables with `__` separators:
 - `ConnectionStrings__PostgresConnection`: PostgreSQL connection string.
 - `LocalLlm__Endpoint`, `LocalLlm__ChatEndpoint`, `LocalLlm__Model`: local model API configuration.
 - `LocalLlm__SearXngUrl`: SearXNG instance with JSON search enabled.
-- `Recaptcha__SiteKey`, `Recaptcha__Secret`: keys valid for the application's hostname.
+- `Turnstile__SiteKey`, `Turnstile__Secret`: Cloudflare Turnstile keys valid for the application's hostname.
 - `Application__PublicBaseUrl`: public HTTP(S) origin used in activation links.
 - `Smtp__Enabled`, `Smtp__Host`, `Smtp__Port`, `Smtp__FromEmail`, `Smtp__Username`, `Smtp__Password`, `Smtp__EnableSsl`: mail delivery configuration.
 - `DataProtection__KeysPath`: directory for persistent session protection keys. By default keys are stored under the application's output directory. Production deployments should use durable storage with restricted permissions and share the keys between replicas.
@@ -53,6 +53,10 @@ dotnet run --project NuctiusNow/NuctiusNow --no-launch-profile --urls http://loc
 ```
 
 For VSCode F5, put the same non-secret settings in `.vscode/launch.json` under the active profile's `env` section, and put the password in a user secret or hosting environment variable. Restart the debugging session after changing them. A successful send logs the SMTP host and port, never the password.
+
+## Cloudflare Turnstile
+
+Create a Turnstile widget in Cloudflare and authorize each development/production hostname. Set `Turnstile__SiteKey` for the browser widget and `Turnstile__Secret` only on the server. The site and secret keys must come from the same widget. For local development, authorize `localhost` and `127.0.0.1` as applicable. Never commit the secret key.
 
 Use your deployed application's HTTPS origin for `Application__PublicBaseUrl` in production. `System.Net.Mail.SmtpClient` supports STARTTLS (usually port 587); it does not support implicit TLS on port 465. Use your provider's STARTTLS endpoint and, when required, an app password or SMTP credential instead of your normal login password. The server log's `Activation email error` identifies missing configuration, authentication, TLS or network failures. Never share passwords or activation tokens from logs.
 

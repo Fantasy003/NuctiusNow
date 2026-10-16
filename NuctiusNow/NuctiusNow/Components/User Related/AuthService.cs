@@ -70,7 +70,7 @@ public class AuthService
         }
     }
 
-    private class RecaptchaVerifyResponse
+    private class TurnstileVerifyResponse
     {
         [JsonPropertyName("success")]
         public bool Success { get; set; }
@@ -86,13 +86,13 @@ public class AuthService
     }
 
     /// <summary>
-    /// Verifies a reCAPTCHA token server-side using Google's verify endpoint.
+    /// Verifies a Cloudflare Turnstile token server-side.
     /// </summary>
-    public async Task<bool> VerifyRecaptchaAsync(string token)
+    public async Task<bool> VerifyTurnstileAsync(string token)
     {
         try
         {
-            var secret = _configuration["Recaptcha:Secret"];
+            var secret = _configuration["Turnstile:Secret"];
             if (string.IsNullOrEmpty(secret) || string.IsNullOrEmpty(token))
                 return false;
 
@@ -105,18 +105,18 @@ public class AuthService
             };
 
             var response = await client.PostAsync(
-                "https://www.google.com/recaptcha/api/siteverify",
+                "https://challenges.cloudflare.com/turnstile/v0/siteverify",
                 new FormUrlEncodedContent(values));
 
             if (!response.IsSuccessStatusCode)
                 return false;
 
             var payload = await response.Content
-                .ReadFromJsonAsync<RecaptchaVerifyResponse>();
+                .ReadFromJsonAsync<TurnstileVerifyResponse>();
 
             if (payload?.Success != true)
             {
-                Console.WriteLine($"reCAPTCHA rejected the token. Google error codes: {string.Join(", ", payload?.ErrorCodes ?? [])}.");
+                Console.WriteLine($"Turnstile rejected the token. Cloudflare error codes: {string.Join(", ", payload?.ErrorCodes ?? [])}.");
                 return false;
             }
 
@@ -124,7 +124,7 @@ public class AuthService
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"reCAPTCHA verification error: {ex.Message}");
+            Console.WriteLine($"Turnstile verification error: {ex.Message}");
             return false;
         }
     }
@@ -137,9 +137,9 @@ public class AuthService
         string passwordPlana,
         string recaptchaToken)
     {
-        var recaptchaOk = await VerifyRecaptchaAsync(recaptchaToken);
-        if (!recaptchaOk)
-            return (false, "Captcha verification failed. Confirm that Recaptcha:Secret belongs to this site key and that your hostname is authorized in Google reCAPTCHA.", null);
+        var turnstileOk = await VerifyTurnstileAsync(recaptchaToken);
+        if (!turnstileOk)
+            return (false, "Turnstile verification failed. Confirm that Turnstile:Secret matches the site key and that this hostname is authorized in Cloudflare.", null);
 
         var (success, message) = await RegistrarAsync(usuarioNuevo, passwordPlana);
         if (!success)

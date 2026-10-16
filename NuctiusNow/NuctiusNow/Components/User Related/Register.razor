@@ -62,13 +62,12 @@
 
                     <div class="form-group">
                         <label>Security Check</label>
-                        <div id="register-recaptcha-container"></div>
+                        <div id="register-turnstile-container"></div>
                     </div>
 
                     <div class="captcha-v3-disclaimer">
-                        This site is protected by reCAPTCHA and the Google
-                        <a href="https://policies.google.com/privacy" target="_blank">Privacy Policy</a> and
-                        <a href="https://policies.google.com/terms" target="_blank">Terms of Service</a> apply.
+                        This site is protected by Cloudflare Turnstile. Cloudflare's
+                        <a href="https://www.cloudflare.com/privacypolicy/" target="_blank">Privacy Policy</a> applies.
                     </div>
 
                     <button type="submit" class="btn-create">Create Account</button>
@@ -132,7 +131,7 @@
     private RegisterFields registerModel = new();
     private string errorMessage = string.Empty;
 
-    private string RecaptchaSiteKey => Configuration["Recaptcha:SiteKey"] ?? string.Empty;
+    private string TurnstileSiteKey => Configuration["Turnstile:SiteKey"] ?? string.Empty;
 
     // Registration -> Preferences flow state
     private bool showPreferences = false;
@@ -147,15 +146,15 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender && !string.IsNullOrWhiteSpace(RecaptchaSiteKey))
+        if (firstRender && !string.IsNullOrWhiteSpace(TurnstileSiteKey))
         {
             try
             {
-                await JS.InvokeVoidAsync("renderRecaptchaCheckbox", "register-recaptcha-container", RecaptchaSiteKey);
+                await JS.InvokeVoidAsync("renderTurnstile", "register-turnstile-container", TurnstileSiteKey);
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"reCAPTCHA render error: {ex.Message}");
+                Console.WriteLine($"Turnstile render error: {ex.Message}");
             }
         }
     }
@@ -184,21 +183,21 @@
 
         try
         {
-            string recaptchaToken = await JS.InvokeAsync<string>("getRecaptchaToken");
+            string turnstileToken = await JS.InvokeAsync<string>("getTurnstileToken");
 
-            if (string.IsNullOrEmpty(recaptchaToken))
+            if (string.IsNullOrEmpty(turnstileToken))
             {
-                errorMessage = "Please complete the CAPTCHA to create an account.";
-                await JS.InvokeVoidAsync("resetRecaptchaCheckbox");
+                errorMessage = "Please complete the Turnstile security check to create an account.";
+                await JS.InvokeVoidAsync("resetTurnstile");
                 return;
             }
 
             var user = new User { Email = registerModel.Email, Username = registerModel.Username };
-            var result = await authService.RegistrarConCaptchaAsync(user, registerModel.Password, recaptchaToken);
+            var result = await authService.RegistrarConCaptchaAsync(user, registerModel.Password, turnstileToken);
             if (!result.success)
             {
                 errorMessage = result.message;
-                await JS.InvokeVoidAsync("resetRecaptchaCheckbox");
+                await JS.InvokeVoidAsync("resetTurnstile");
                 return;
             }
 
@@ -224,7 +223,7 @@
         }
         catch (Exception ex)
         {
-            errorMessage = "Error validating Security Captcha. Make sure the script is loaded.";
+            errorMessage = "Error validating the Turnstile security check. Make sure the widget is loaded.";
             Console.WriteLine(ex.Message);
         }
     }
