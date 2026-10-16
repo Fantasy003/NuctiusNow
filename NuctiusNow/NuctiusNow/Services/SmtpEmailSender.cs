@@ -36,10 +36,18 @@ public sealed class SmtpEmailSender : IEmailSender
 
         if (string.IsNullOrWhiteSpace(host) || string.IsNullOrWhiteSpace(fromEmail))
             throw new InvalidOperationException("SMTP configuration is incomplete.");
+        if (port is < 1 or > 65535)
+            throw new InvalidOperationException("SMTP port must be between 1 and 65535.");
+        if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password))
+            throw new InvalidOperationException("SMTP username and password are required.");
+
+        MailAddress from;
+        try { from = new MailAddress(fromEmail, fromName); }
+        catch (FormatException) { throw new InvalidOperationException("Smtp:FromEmail is not a valid email address."); }
 
         using var message = new MailMessage
         {
-            From = new MailAddress(fromEmail, fromName),
+            From = from,
             Subject = subject,
             Body = htmlBody,
             IsBodyHtml = true,
@@ -54,10 +62,17 @@ public sealed class SmtpEmailSender : IEmailSender
             DeliveryMethod = SmtpDeliveryMethod.Network
         };
 
-        if (!string.IsNullOrWhiteSpace(username))
-            client.Credentials = new NetworkCredential(username, password);
+        client.Credentials = new NetworkCredential(username, password);
 
-        await client.SendMailAsync(message, cancellationToken);
-        _logger.LogInformation("Activation email sent to {Recipient}.", recipient);
+        try
+        {
+            await client.SendMailAsync(message, cancellationToken);
+            _logger.LogInformation("Activation email sent to {Recipient} via {Host}:{Port}.", recipient, host, port);
+        }
+        catch (SmtpException ex)
+        {
+            _logger.LogError(ex, "SMTP delivery failed for {Recipient} via {Host}:{Port} (SSL={EnableSsl}).", recipient, host, port, enableSsl);
+            throw new InvalidOperationException($"SMTP delivery failed: {ex.Message}", ex);
+        }
     }
 }

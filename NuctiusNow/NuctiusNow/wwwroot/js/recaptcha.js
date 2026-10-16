@@ -27,6 +27,7 @@
                 ? window.grecaptcha.getResponse(widgetId) : "";
         } catch { return ""; }
     };
+    window.hasRecaptchaWidget = () => widgetId !== undefined && widgetContainer?.isConnected === true;
     window.resetRecaptchaCheckbox = () => {
         if (window.grecaptcha && widgetId !== undefined && widgetContainer?.isConnected)
             window.grecaptcha.reset(widgetId);

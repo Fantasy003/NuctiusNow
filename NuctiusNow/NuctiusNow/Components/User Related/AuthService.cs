@@ -114,7 +114,13 @@ public class AuthService
             var payload = await response.Content
                 .ReadFromJsonAsync<RecaptchaVerifyResponse>();
 
-            return payload?.Success ?? false;
+            if (payload?.Success != true)
+            {
+                Console.WriteLine($"reCAPTCHA rejected the token. Google error codes: {string.Join(", ", payload?.ErrorCodes ?? [])}.");
+                return false;
+            }
+
+            return true;
         }
         catch (Exception ex)
         {
@@ -133,7 +139,7 @@ public class AuthService
     {
         var recaptchaOk = await VerifyRecaptchaAsync(recaptchaToken);
         if (!recaptchaOk)
-            return (false, "Captcha verification failed.", null);
+            return (false, "Captcha verification failed. Confirm that Recaptcha:Secret belongs to this site key and that your hostname is authorized in Google reCAPTCHA.", null);
 
         var (success, message) = await RegistrarAsync(usuarioNuevo, passwordPlana);
         if (!success)

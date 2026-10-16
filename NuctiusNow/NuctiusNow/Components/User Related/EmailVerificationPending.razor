@@ -72,9 +72,14 @@
             success = result.Success;
             message = result.Message;
         }
-        catch
+        catch (InvalidOperationException ex)
         {
-            message = "The activation email could not be sent right now.";
+            message = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Activation resend failed: {ex}");
+            message = "The activation email could not be sent right now. Check the server log for details.";
         }
         finally
         {

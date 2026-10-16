@@ -188,7 +188,7 @@
 
             if (string.IsNullOrEmpty(recaptchaToken))
             {
-                errorMessage = "Please complete the captcha to create an account.";
+                errorMessage = "Please complete the CAPTCHA to create an account.";
                 await JS.InvokeVoidAsync("resetRecaptchaCheckbox");
                 return;
             }

@@ -35,7 +35,7 @@ Profile updates normalize all supported language names and codes; legacy English
 
 ## Activation email setup
 
-Email delivery is disabled unless `Smtp__Enabled=true` is configured. If registration reports that delivery failed, the account still exists: finish preferences and use **Resend** after correcting the mail configuration. Do not register the same account again.
+Email delivery is disabled unless `Smtp__Enabled=true` is configured. The settings must be present in the same process that launches ASP.NET (the VSCode Run/Debug profile does not inherit variables entered into a separate PowerShell window). If registration reports that delivery failed, the account still exists: finish preferences and use **Resend** after correcting the mail configuration. Do not register the same account again.
 
 For a local VSCode PowerShell terminal, set the following before starting the application (replace placeholders with your provider's settings; keep credentials out of Git):
 
@@ -51,6 +51,8 @@ $env:Smtp__Username = "<SMTP username>"
 # Set Smtp__Password securely using your local environment or secret manager.
 dotnet run --project NuctiusNow/NuctiusNow --no-launch-profile --urls http://localhost:5217
 ```
+
+For VSCode F5, put the same non-secret settings in `.vscode/launch.json` under the active profile's `env` section, and put the password in a user secret or hosting environment variable. Restart the debugging session after changing them. A successful send logs the SMTP host and port, never the password.
 
 Use your deployed application's HTTPS origin for `Application__PublicBaseUrl` in production. `System.Net.Mail.SmtpClient` supports STARTTLS (usually port 587); it does not support implicit TLS on port 465. Use your provider's STARTTLS endpoint and, when required, an app password or SMTP credential instead of your normal login password. The server log's `Activation email error` identifies missing configuration, authentication, TLS or network failures. Never share passwords or activation tokens from logs.
 

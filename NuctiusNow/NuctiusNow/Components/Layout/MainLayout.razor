@@ -6,14 +6,20 @@
 
 <div class="@(ThemeEnabled ? $"theme-{ThemeState.CurrentTheme} app-shell" : "app-shell")">
 
-    <SiteLocalization />
-    <NavMenu />
+    @if (!IsAuthenticationRoute)
+    {
+        <SiteLocalization />
+        <NavMenu />
+    }
 
     <main class="page-body">
         @Body
     </main>
 
-    <Chatbot />
+    @if (!IsAuthenticationRoute)
+    {
+        <Chatbot />
+    }
 
 </div>
 
@@ -22,6 +28,8 @@
 
     private bool ThemeEnabled =>
         !IsExcludedThemeRoute(Navigation.Uri);
+
+    private bool IsAuthenticationRoute => IsExcludedThemeRoute(Navigation.Uri);
 
     protected override void OnInitialized()
     {
